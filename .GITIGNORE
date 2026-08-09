@@ -1,0 +1,30 @@
+# Dataset
+data/raw/
+data/interim/
+data/processed/
+
+# Models
+models/checkpoints/
+models/trained/
+models/exported/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+venv/
+.venv/
+
+# MLflow
+mlruns/
+
+# DVC Cache
+.dvc/cache/
+
+# OS Files
+.DS_Store
+Thumbs.db

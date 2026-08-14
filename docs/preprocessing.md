@@ -55,3 +55,18 @@ Statistics Returned:
 - Positive cases
 - Negative cases
 - Total bounding boxes
+
+## Sprint 2 - Milestone 4 ------------------------
+
+## Patient-Level Split
+
+Purpose:
+Split the dataset by patient IDs to avoid data leakage.
+
+Output:
+- Train patient IDs
+- Validation patient IDs
+- Test patient IDs
+
+Random Seed:
+42

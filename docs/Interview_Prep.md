@@ -163,6 +163,8 @@ Why?
 batch = next(iter(train_loader))
 ```
 
+# 📂 File: src/analysis/dataset_statistics.py
+
 56. Why did you create a separate analysis module instead of putting this inside the notebook?
 57. Why compute statistics before training a model?
 58. Why is counting positive and negative cases important?
@@ -174,4 +176,201 @@ batch = next(iter(train_loader))
 (Hint: Multiple scans per patient and potential data leakage.)
 62. If tomorrow another hospital contributes new data, which statistics would you compare first before combining the datasets?
 (Expected: Class distribution, patient demographics, image properties, annotation quality.)
+
+# 📂 File: src/analysis/class_distribution.py
+
+63. Why is checking class distribution one of the first steps in EDA?
+64. What is class imbalance?
+Can you explain it using the RSNA dataset?
+65. How does class imbalance affect model training?
+66. Why is accuracy a poor metric on highly imbalanced datasets?
+67. Suppose 95% of the dataset belongs to one class.
+What would happen if the model always predicted the majority class?
+68. How can we handle class imbalance?
+Expected answers:
+Class weights
+Weighted Cross-Entropy Loss
+Focal Loss
+Oversampling
+Undersampling
+Data augmentation
+69. Why did we create class_distribution.py instead of writing the calculations directly in the notebook?
+70. Why is a bar chart generally better than a pie chart for comparing class counts?
+(Expected answer: Bar charts make it easier to compare magnitudes accurately, while pie charts are useful for showing proportions but less precise for comparison.)
+71. Why did we include percentages as well as counts?
+72. If you discover severe class imbalance, what changes later in the pipeline?
+(Hint: Loss function, sampling strategy, evaluation metrics, threshold tuning.)
+
+
+# 📂 File: src/analysis/patient_analysis.py
+
+73. Why is patient-level analysis more important than image-level analysis in medical AI?
+74. Why did we count images from the filesystem instead of inferring them from the labels?
+75. Why check for duplicate patient IDs?
+76. What does it mean if one patient has multiple images?
+77. What does it mean if one patient has multiple bounding boxes?
+78. Why analyze only positive patients when studying bounding boxes?
+79. Suppose another dataset has five images per patient. How would that affect your preprocessing and splitting strategy?
+80. Why is a histogram appropriate for image counts?
+81. Why is a bar chart appropriate for bounding box frequencies?
+82. How can patient-level analysis influence model design?
+Expected discussion points:
+Patient-level data leakage prevention.
+Multi-instance learning if multiple images exist.
+Severity estimation using bounding box counts.
+Patient-centric evaluation rather than image-centric evaluation.
+
+
+# 📂 File: src/analysis/image_analysis.py
+
+83. Why did we use stop_before_pixels=True when reading DICOM files?
+(Expected: To read only metadata, avoiding the overhead of loading image pixel data.)
+84. Why analyze image dimensions before training?
+85. Why is aspect ratio important in medical imaging?
+86. What is PixelSpacing? Why does it matter?
+(Expected: It represents the physical distance between adjacent pixels, usually in millimeters. It's important because two images can have the same pixel dimensions but represent different physical sizes.)
+87. What is the difference between image resolution and pixel spacing?
+88. What are AP and PA chest X-rays?
+(Expected: AP = Anterior-to-Posterior, PA = Posterior-to-Anterior. They differ in acquisition geometry and can affect the appearance of anatomical structures.)
+89. Why check image size consistency?
+90. Suppose half the dataset contains 1024×1024 images and the other half 2048×2048. How would you handle this?
+91. Why use histograms for width and height distributions?
+92. Why use boxplots in addition to histograms?
+(Expected: Histograms show the distribution shape, while boxplots highlight medians, quartiles, and potential outliers.)
+93. If you find images with very different pixel spacing, how could that affect model performance?
+(Expected: The same pathology could occupy different numbers of pixels depending on spacing, potentially confusing the model. Physical-size normalization or spacing-aware preprocessing may be needed.)
+
+# 📂 File: src/analysis/pixel_analysis.py
+
+94. Why analyze pixel intensities before training a CNN?
+95. What does mean pixel intensity represent?
+96. Why can standard deviation be used as a rough measure of contrast?
+97. What is dynamic range?
+98. Why manually inspect the darkest and brightest images?
+99. Why analyze raw DICOMs instead of normalized images?
+100. What could cause unusually dark or bright X-rays?
+101. Why use a sample instead of processing every image during exploratory analysis?
+102. Why use a fixed random seed for sampling?
+103. What is the difference between histogram and density plot?
+104. What does a boxplot tell you that a histogram might not?
+105. If you discover substantial brightness variation, what preprocessing or augmentation techniques could you consider?
+106. Would you automatically apply histogram equalization if brightness variation exists?
+Expected answer:
+No. I would first determine whether the variation represents meaningful acquisition differences or undesirable artifacts. Applying aggressive contrast enhancement without validation could remove clinically useful information or introduce artificial patterns.
+
+107. Why shouldn't we calculate pixel statistics on normalized images when investigating the original dataset?
+108. Why did we use random sampling instead of simply taking the first 1,000 images?
+109. How would you determine whether 1,000 images are enough for this EDA?
+110. If the brightness distribution of the sample is very different from the full dataset, what would you do?
+Expected answer:
+Increase the sample size or use a more representative sampling strategy, potentially stratifying by relevant characteristics such as class or acquisition/view type.
+
+
+# 📂 File: src/analysis/bounding_box_analysis.py
+
+111. What does a bounding box represent in the RSNA dataset?
+112. Why does one patient/image sometimes have multiple bounding boxes?
+113. How do you calculate bounding box area?
+area = width × height
+114. How do you calculate bounding box aspect ratio?
+aspect ratio = width / height
+115. Why might bounding box area be useful for medical-image analysis?
+116. What does a bounding box center represent?
+117. Why did we calculate:
+center_x = x + width / 2
+center_y = y + height / 2
+118. Why did we use a heatmap for bounding-box centers?
+119. Can the heatmap tell us which anatomical lung lobe is affected?
+Expected answer:
+No. It shows the spatial distribution of annotation centers in image coordinates. Anatomical localization would require additional anatomical information or segmentation.
+
+120. What does it mean if bounding boxes are very small?
+Possible discussion:
+small opacity regions
+annotation granularity
+potential localization difficulty
+potential label noise
+121. What does a very large bounding box indicate?
+It could represent a large region of lung opacity, but we shouldn't automatically interpret it as disease severity without clinical validation.
+122. Why might multiple bounding boxes exist in one image?
+Because pneumonia opacity may occur in multiple distinct regions.
+123. Why did we create one row per bounding box in bbox_df?
+Because bounding boxes are variable-length annotations. A patient/image can have zero, one, or multiple boxes.
+124. Why didn't we simply keep the nested bounding-box dictionaries?
+Because a tabular representation makes statistical analysis, visualization, aggregation, and plotting much easier.
+125. If AstraMed becomes an object-detection model later, how would these annotations be used?
+Expected discussion:
+Image
+ ↓
+Object Detection Model
+ ↓
+Bounding Boxes
+ ↓
+Class + Confidence
+The existing annotations could become ground-truth targets for detector training/evaluation.
+126. What problems could exist with bounding-box annotations?
+Possible answers:
+inaccurate localization
+inconsistent box sizes
+overlapping boxes
+missing annotations
+annotation noise
+ambiguous disease boundaries
+127. Why should we inspect bounding-box outliers visually?
+Because a statistical outlier may be a legitimate medical case rather than bad data.
+
+
+# 📂 File: src/analysis/metadata_analysis.py
+
+128. What is DICOM metadata?
+129. Why is metadata useful in medical imaging?
+130. Why did we use stop_before_pixels=True?
+131. Why do we convert PatientAge from "030Y" into 30?
+132. What does PixelSpacing represent?
+133. What is the difference between pixel dimensions and physical dimensions?
+134. What are AP and PA X-ray views?
+135. Why might AP and PA images have different appearances?
+136. Why is patient sex useful to analyze even if we don't use it as a model feature?
+137. Why did we analyze the manufacturer?
+This is the research-oriented question.
+A strong answer:
+Different manufacturers or acquisition systems can introduce systematic differences in image appearance. If manufacturer information is correlated with the target, a model could learn scanner-specific shortcuts instead of clinically meaningful features.
+
+138. What is shortcut learning?
+139. How can metadata cause data leakage?
+140. Suppose 90% of pneumonia-positive cases came from Hospital A and 90% of negative cases came from Hospital B. What's the danger?
+The model could learn:
+Hospital A → pneumonia
+Hospital B → normal
+instead of:
+X-ray features → pneumonia
+That's a classic dataset bias / shortcut learning problem.
+141. Why shouldn't we automatically remove all metadata?
+Because some metadata can be clinically useful.
+We should determine:
+whether it improves generalization
+whether it introduces leakage
+whether it represents legitimate clinical information
+whether it will be available during real-world inference
+142. Why analyze missing metadata?
+Missingness itself can contain information.
+Also, a feature that's missing for a large portion of the dataset may not be reliable enough to use directly.
+143. Why are we sampling 1,000 images instead of processing all DICOMs?
+Same reasoning as Milestone 5:
+Metadata extraction is cheaper than pixel decoding, but sampling still allows faster exploratory iteration. Once the analysis is finalized, we can run a full-dataset verification.
+
+144. If manufacturer is highly correlated with pneumonia, what would you investigate?
+Expected discussion:
+Manufacturer
+      ↓
+Hospital/site?
+      ↓
+Acquisition protocol?
+      ↓
+Patient population?
+      ↓
+Class imbalance?
+      ↓
+Potential shortcut?
+This is the sort of question that can turn a basic ML interview into a research conversation.
 

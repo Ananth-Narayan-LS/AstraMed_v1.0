@@ -26,9 +26,9 @@ def generate_dataset_statistics(labels: Dict)->Dict:
     total_bounding_boxes = 0
     multiple_bbox_images = 0
 
-    images_per_patients = []
+    patient_image_counts = {}
 
-    for patient in labels.values():
+    for patient_id , patient in labels.items():
         target = patient["target"]
         boxes = patient["bounding_boxes"]
 
@@ -42,18 +42,28 @@ def generate_dataset_statistics(labels: Dict)->Dict:
         if len(boxes) > 1:
             multiple_bbox_images += 1
 
-        images_per_patients.append(1)
+        # images_per_patients.append(1)
+
+        # If tomorrow we use:NIH ChestX-ray14, CheXpert, MIMIC-CXR patients can have multiple studies and multiple images.
+
+        patient_image_counts[patient_id] = (
+            patient_image_counts.get(patient_id,0)+1
+        )    
+
+        average_images = ( sum(patient_image_counts.values())/len(patient_image_counts) )
+
+
 
     stats = {
         "Total Patients" : total_patients,
 
-        "Total Images" : len(images_per_patients),
+        "Total Images" : len(patient_image_counts),
 
         "Positive Cases" : positive_cases,
 
         "Negative cases" : negative_cases,
 
-        "Average Images Per Patient" : round(sum(images_per_patients)/total_patients , 2),
+        "Average Images Per Patient" : round( average_images , 2),
 
         "Total Bounding Boxes" : total_bounding_boxes,
 

@@ -162,3 +162,16 @@ Why?
 ```python
 batch = next(iter(train_loader))
 ```
+
+56. Why did you create a separate analysis module instead of putting this inside the notebook?
+57. Why compute statistics before training a model?
+58. Why is counting positive and negative cases important?
+(Hint: Class imbalance.)
+59. What does "Average Images per Patient" tell us?
+60. Why count images with multiple bounding boxes?
+(Hint: Disease severity and localization complexity.)
+61. What would happen if the number of images was greater than the number of patients?
+(Hint: Multiple scans per patient and potential data leakage.)
+62. If tomorrow another hospital contributes new data, which statistics would you compare first before combining the datasets?
+(Expected: Class distribution, patient demographics, image properties, annotation quality.)
+

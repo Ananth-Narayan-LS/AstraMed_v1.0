@@ -374,3 +374,99 @@ Class imbalance?
 Potential shortcut?
 This is the sort of question that can turn a basic ML interview into a research conversation.
 
+
+# 📂 File: src/analysis/outlier_detection.py
+145. What is an outlier?
+146. Why shouldn't we automatically remove outliers?
+147. What is the IQR method?
+Expected:
+IQR = Q3 - Q1
+
+Lower bound = Q1 - 1.5 × IQR
+
+Upper bound = Q3 + 1.5 × IQR
+148. Why did we use IQR instead of simply using mean ± standard deviation?
+Because IQR is more robust to extreme values and does not assume a normally distributed variable.
+149. How did we detect unusually large bounding boxes?
+150. How can you detect a corrupted DICOM?
+Possible checks:
+- DICOM can be opened.
+- Required metadata exists.
+- Pixel data can be decoded.
+- Pixel array has valid dimensions.
+- Pixel values are not unexpectedly invalid.
+151. Why does pydicom.dcmread() succeeding not necessarily mean the DICOM is completely valid?
+Because parsing the DICOM structure and successfully decoding its pixel data are separate operations.
+That's particularly relevant because we already encountered compressed DICOMs in AstraMed.
+152. How did we define a blank image?
+A strong answer:
+We used extremely low pixel-intensity variation as a screening heuristic. It is not a clinically validated definition of a blank X-ray, so flagged samples require visual inspection.
+
+153. Why is std < 5 not necessarily a universal threshold?
+Because pixel distributions depend on the dataset, acquisition system, bit depth, preprocessing, and modality.
+154. Why do we need an outlier gallery?
+Because numerical statistics can tell us that something is unusual, but visual inspection helps determine why it is unusual.
+155. What would you do if an outlier is actually a valid severe pneumonia case?
+Keep it.
+An unusual medical case isn't bad data merely because it's statistically unusual.
+156. What would you do if an image is corrupted?
+Depending on the situation:
+- replace/re-download it
+- exclude it from training
+- document the exclusion
+- preserve the original raw file
+157. Why do we sample 1,000 images for corruption and blank-image checks?
+Because these checks require pixel decoding and are expensive.
+For exploratory analysis, sampling enables fast iteration.
+158. How would you perform final dataset validation?
+Run the integrity checks over all images, not just the sample, and save the results as a reproducible validation report.
+159. What's the difference between an outlier and a data error?
+This is a good one.
+An outlier is unusual relative to the distribution. A data error is incorrect, corrupted, or invalid data. An outlier can be perfectly valid.
+
+
+# 📂 File: src/analysis/correlation_analysis.py
+160. What is correlation?
+161. What is the difference between correlation and causation?
+162. Why did we use Spearman correlation?
+163. What does a correlation of +1 mean?
+164. What does a correlation of 0 mean?
+165. What does a negative correlation mean?
+166. Why can't we conclude that age causes pneumonia just because they correlate?
+167. Why did we convert sex from categorical values to numeric values?
+168. Why did we aggregate bounding boxes before correlation analysis?
+Expected:
+Because one image can have multiple bounding boxes. Correlation analysis requires observations at a consistent unit of analysis, so we aggregate bounding-box information to the image/patient-ID level.
+
+169. Why would bounding-box area show a strong correlation with the target?
+Expected:
+Because the bounding boxes are pneumonia annotations. Positive samples have bounding boxes while negative samples don't, so the relationship is partly built into the labeling process.
+
+170. Why shouldn't bounding-box area be used as an input feature for our classification model?
+Because it would require the ground-truth pneumonia annotation to exist at inference time.
+That's label leakage.
+171. Why did we sample 1,000 images?
+Because pixel-level statistics are computationally expensive and we're still in exploratory analysis.
+172. What happens if the sampled metadata and pixel datasets don't contain the same patient IDs?
+The merge produces missing values.
+That's why we explicitly inspect:
+correlation_df.isna().sum()
+173. Why is correlation analysis useful before modeling?
+It can reveal:
+- potential relationships
+- redundant variables
+- dataset bias
+- suspicious shortcuts
+- possible leakage
+- variables worth investigating further
+174. Is a high correlation always useful for machine learning?
+No.
+A high correlation may be:
+- caused by leakage
+- caused by dataset construction
+- unstable
+- non-causal
+- unavailable during inference
+This is especially important in medical ML.
+
+

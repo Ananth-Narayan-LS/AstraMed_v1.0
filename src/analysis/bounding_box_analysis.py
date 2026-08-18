@@ -36,7 +36,7 @@ def create_bounding_box_dataframe(labels : dict) -> pd.DataFrame:
             aspect_ratio = width / height if height != 0 else np.nan
 
             records.append({
-                "patient_ids" : patient_ids,
+                "patient_id" : patient_ids,
 
                 "x": x,
                 "y": y,

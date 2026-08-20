@@ -469,4 +469,73 @@ A high correlation may be:
 - unavailable during inference
 This is especially important in medical ML.
 
+# 📂 File: pages/01_Dataset.py
+109. Why cache the dataset using @st.cache_data?
+110. Why separate data loading from UI rendering?
+111. Why reuse analysis functions instead of recalculating everything inside the Streamlit page?
+112. Why use st.metric() for KPIs?
+113. Why present both tables and charts instead of only charts?
+114. Why include an Engineering Insight section?
+(Expected answer: The dashboard should not only visualize the data but also communicate actionable decisions that influence preprocessing, modeling, and evaluation.)
+
+
+# 📂 File: pages/02_Image_Explorer.py
+115. Why cache the labels instead of reading the CSV every time?
+116. Why use st.session_state?
+Expected Answer
+To preserve the selected image across Streamlit reruns. Without it, interactions like clicking the random button would reset the page state.
+117. Why store only the selected index in session_state instead of the image itself?
+Expected Answer
+Images are large objects. Storing only the index keeps the session lightweight and allows images to be loaded on demand.
+118. Why separate image loading (load_dicom) from UI rendering?
+119. Why show metadata alongside the image?
+Expected Answer
+Metadata provides context such as acquisition parameters and image dimensions, making the viewer more useful for debugging and analysis.
+120. Why use st.image() instead of Matplotlib for displaying a single image?
+121. If the dataset contained 500,000 images, what improvements would you make?
+Possible answers:
+- Search by patient ID instead of only a slider.
+- Pagination.
+- Thumbnail previews.
+- Cached metadata.
+- Database indexing.
+- Lazy loading.
+
+
+# 📂 File: pages/03_Metadata.py
+122. Why cache the metadata DataFrame using @st.cache_data?
+Expected Answer
+Metadata extraction from thousands of DICOM files is expensive. Caching prevents repeated reads and significantly improves dashboard responsiveness.
+123. Why perform filtering on a copy (filtered = metadata_df.copy()) instead of modifying the original DataFrame?
+Expected Answer
+To preserve the cached dataset and avoid side effects. The original data remains unchanged while users interact with filters.
+124. Why use sidebar filters instead of embedding them in the main page?
+Expected Answer
+Filters are controls rather than content. Placing them in the sidebar keeps the main page focused on results and improves usability.
+125. Why support both dropdown filters and free-text patient search?
+Expected Answer
+Dropdowns are useful for categorical exploration, while text search allows quick lookup of a known patient. Together they support both exploratory analysis and targeted inspection.
+126. Why provide CSV export from the dashboard?
+Expected Answer
+It allows filtered subsets of the metadata to be shared, analyzed further, or used in downstream workflows without rerunning code.
+
+
+
+# 📂 File: app/pages/04_Bounding_Box.py
+127. Why are bounding boxes displayed only for positive patients?
+Expected Answer
+Negative patients have no pneumonia regions, so there are no bounding box annotations. Displaying boxes only for positive cases reflects the dataset correctly.
+128. Why use matplotlib.patches.Rectangle instead of modifying the image array directly?
+Expected Answer
+Drawing overlays keeps the original image unchanged. It's a non-destructive visualization approach that's easier to customize and debug.
+129. Why is the bounding box represented by (x, y, width, height) instead of two corner points?
+Expected Answer
+The RSNA dataset stores annotations in COCO-style format using the top-left corner and dimensions. This is a common annotation format and is convenient for drawing and converting to other formats if needed.
+130. Why doesn't AstraMed v1 use bounding boxes during training?
+Expected Answer
+AstraMed v1 is a classification model that predicts whether pneumonia is present. Bounding boxes are useful for visualization and future localization or detection models, but they are not required as training inputs for classification.
+131. If AstraMed evolves into an object detection model, what changes?
+Expected Answer
+The dataset would return images along with bounding boxes and class labels. The training pipeline would switch to an object detection framework (e.g., Faster R-CNN, YOLO), and the DataLoader would use a custom collate_fn to handle variable numbers of boxes per image.
+
 

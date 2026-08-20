@@ -25,7 +25,7 @@ from pathlib import Path
 import pandas as pd
 import pydicom
 
-def analyze_metadata(
+def extract_metadata(
         image_dir : Path,
         sample_size : int = 1000,
         random_state : int = 42
@@ -58,10 +58,12 @@ def analyze_metadata(
         records.append({
             "patient_id" : image_path.stem,
 
-            "age" : getattr(
-                dicom,
-                "PatientAge",
-                None 
+            "age": convert_age_to_years(
+                getattr(
+                    dicom,
+                    "PatientAge",
+                    None
+                )
             ),
 
             "sex" : getattr(
@@ -96,14 +98,37 @@ def analyze_metadata(
     return pd.DataFrame(records)
 
 def convert_age_to_years(age):
-    # Convert DICOM PatientAge format into numeric years
 
     if pd.isna(age):
         return None
 
-    age = str(age).strip()
+    age = str(age).strip().upper()
+
+    if len(age) < 4:
+        return None
+
+    value = age[:-1]
+
+    unit = age[-1]
 
     try:
-        return int(age[:3])
-    except (ValueError, TypeError):
+
+        value = int(value)
+
+    except ValueError:
+
         return None
+
+    if unit == "Y":
+        return value
+
+    elif unit == "M":
+        return round(value / 12, 1)
+
+    elif unit == "W":
+        return round(value / 52, 1)
+
+    elif unit == "D":
+        return round(value / 365, 1)
+
+    return None

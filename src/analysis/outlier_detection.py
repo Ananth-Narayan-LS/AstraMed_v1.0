@@ -26,7 +26,7 @@ def detect_dimension_outliers(
 
         outliers = image_df[
             (image_df[column] < lower ) |
-            (image_df[column] < upper ) 
+            (image_df[column] > upper ) 
         ]
 
         results[column] = {
@@ -102,7 +102,7 @@ def check_dicom_integrity(
         try:
             image, _ = load_dicom(image_path)
             records.append({
-                "patient_ids" : image_path.stem,
+                "patient_id" : image_path.stem,
                 "path" : str(image_path),
                 "valid" : True,
                 "error" : None
@@ -110,7 +110,7 @@ def check_dicom_integrity(
         except Exception as e:
 
             records.append({
-                "patient_ids" : image_path.stem,
+                "patient_id" : image_path.stem,
                 "path" : str(image_path),
                 "valid" : False,
                 "error" : str(e)
@@ -147,7 +147,7 @@ def detect_blank_images(
             std = float(np.std(image))
 
             records.append({
-                "patient_ids" : image_path.stem,
+                "patient_id" : image_path.stem,
 
                 "std_intensity" : std,
 
@@ -156,7 +156,7 @@ def detect_blank_images(
 
         except Exception:
             records.append({
-                "patient_ids" : image_path.stem,
+                "patient_id" : image_path.stem,
 
                 "std_intensity" : np.nan,
 

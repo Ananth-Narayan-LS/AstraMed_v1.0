@@ -59,7 +59,7 @@ def bounding_boxes_per_patient(labels:dict) -> pd.DataFrame:
 
     for patient_ids , patient in labels.items():
         records.append({
-            "patient_ids" : patient_ids,
+            "patient_id" : patient_ids,
 
             "target" : patient["target"],
 

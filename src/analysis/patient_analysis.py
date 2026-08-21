@@ -21,7 +21,7 @@ def analyze_images_per_patient(image_dir : Path) -> pd.DataFrame:
     df = pd.DataFrame(
         counter.items(),
         columns=[
-            "patient_ids",
+            "patient_id",
             "image_count"
         ]
     )
@@ -54,7 +54,7 @@ def check_duplicate_patients(image_df: pd.DataFrame):
     
 
     duplicates = image_df[
-        image_df["patient_ids"].duplicated()
+        image_df["patient_id"].duplicated()
     ]
 
     return duplicates

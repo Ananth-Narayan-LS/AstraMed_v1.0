@@ -65,8 +65,7 @@ with col1:
 with col2:
     st.metric(
         label = 'Task',
-        value="Pneumonia",
-        delta="Classification"
+        value="Pneumonia Classification",
     )
 
 with col3:

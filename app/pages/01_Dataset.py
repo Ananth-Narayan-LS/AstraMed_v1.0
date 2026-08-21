@@ -43,7 +43,6 @@ st.subheader("📌 Dataset Overview")
 col1, col2, col3, col4 = st.columns(4)
 
 stats = dict(zip(stats_df["Statistic"], stats_df["Value"]))
-print(stats)
 
 with col1:
     st.metric(
@@ -76,7 +75,7 @@ st.subheader("📋 Dataset Summary")
 
 st.dataframe(
     stats_df,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
 )
 
@@ -87,7 +86,7 @@ st.subheader("📈 Class Distribution")
 
 st.dataframe(
     class_df,
-    use_container_width=True,
+    width="stretch",    
     hide_index=True, 
 )
 

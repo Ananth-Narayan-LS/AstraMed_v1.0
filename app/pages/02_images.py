@@ -136,12 +136,12 @@ with col2:
 
     st.subheader("Image Metadata")
 
-    st.write(f"**Rows:** {metadata['Rows']}")
-    st.write(f"**Columns:** {metadata['Columns']}")
-    st.write(f"**Modality:** {metadata['Modality']}")
-    st.write(f"**Pixel Spacing:** {metadata['PixelSpacing']}")
+    st.write(f"**Rows:** {metadata['rows']}")
+    st.write(f"**Columns:** {metadata['columns']}")
+    st.write(f"**Modality:** {metadata['modality']}")
+    st.write(f"**Pixel Spacing:** {metadata['pixel_spacing']}")
     st.write(
-        f"**Photometric Interpretation:** {metadata['PhotometricInterpretation']}"
+        f"**Photometric Interpretation:** {metadata['photometric_interpretation']}"
     )
 
 st.divider()

@@ -16,3 +16,13 @@ TRAIN_IMAGES = RSNA_ROOT / "stage_2_train_images"
 TRAIN_LABELS = RSNA_ROOT / "stage_2_train_labels.csv"
 
 CLASS_INFO = RSNA_ROOT / "stage_2_detailed_class_info.csv"
+
+TEST_IMAGES = RSNA_ROOT / "stage_2_test_images"
+
+MODEL_DIR = PROJECT_ROOT / "models"
+
+OUTPUT_DIR = PROJECT_ROOT / "outputs"
+
+NOTEBOOKS_DIR = PROJECT_ROOT / "notebooks"
+
+APP_DIR = PROJECT_ROOT / "app"

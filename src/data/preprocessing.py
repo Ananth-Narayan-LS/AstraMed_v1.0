@@ -61,7 +61,17 @@ def preprocess_image(
     works regardless of the original range.
 
     """
+    # to handle division by zero i.e if an image has min == max
+    if image.max() > image.min():
 
-    image = (image - image.min()) / (image.max() - image.min())
+        image = (
+            image - image.min()
+        ) / (
+            image.max() - image.min()
+        )
 
+    else:
+
+        image = np.zeros_like(image)
+        
     return image

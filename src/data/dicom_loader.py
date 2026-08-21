@@ -54,18 +54,18 @@ def load_dicom(
 
     #EXTRACT USEFUL METADATA
     metadata = {
-        "PatientID" : getattr(dicom,"PatientID",None),
-        "Modality" : getattr(dicom,"Modality",None),
-        "Rows" : getattr(dicom,"Rows",None),
-        "Columns" : getattr(dicom,"Columns",None),
-        "PhotometricInterpretation" : getattr(
+        "patient_id" : getattr(dicom,"PatientID",None),
+        "modality" : getattr(dicom,"Modality",None),
+        "rows" : getattr(dicom,"Rows",None),
+        "columns" : getattr(dicom,"Columns",None),
+        "photometric_interpretation" : getattr(
             dicom,
             "PhotometricInterpretation",
             None,
         ),
-        "PixelSpacing": getattr(dicom, "PixelSpacing", None),
-        "BitsStored": getattr(dicom, "BitsStored", None),
-        "BitsAllocated": getattr(dicom, "BitsAllocated", None),
+        "pixel_spacing": getattr(dicom, "PixelSpacing", None),
+        "bits_stored": getattr(dicom, "BitsStored", None),
+        "bits_allocated": getattr(dicom, "BitsAllocated", None),
         "image_shape":image.shape,
         "dtype":str(image.dtype),
     }

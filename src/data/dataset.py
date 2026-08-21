@@ -12,12 +12,12 @@ from torch.utils.data import Dataset
 from src.data.dicom_loader import load_dicom
 from src.data.preprocessing import preprocess_image
 
-import torch
 
 
 class RSNADataset(Dataset):
     def __init__(
             self,
+            #because it is a list, not a single ID.
             patient_ids,
             labels,
             image_dir,
@@ -26,10 +26,10 @@ class RSNADataset(Dataset):
         self.labels = labels
         self.image_dir = Path(image_dir)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.patient_ids)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx:int) -> dict:
         patient_id = self.patient_ids[idx]
 
         image_path = self.image_dir / f"{patient_id}.dcm"
@@ -45,7 +45,7 @@ class RSNADataset(Dataset):
         sample = {
             "image" : image,
             "target" : self.labels[patient_id]["target"],
-            "patient_ids" : patient_id
+            "patient_id" : patient_id
         }
 
         return sample

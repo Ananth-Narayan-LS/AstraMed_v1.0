@@ -20,8 +20,6 @@ from typing import Dict, Tuple , Union
 
 import pandas as pd
 
-print("NEW LABELS.PY LOADED")
-
 def load_labels(
         csv_path : Union[str, Path]
 )-> Tuple[Dict,Dict]:
@@ -67,11 +65,11 @@ def load_labels(
             labels[patient_id]["bounding_boxes"].append(bbox)
             total_boxes += 1
 
-    dataset_summary = {
+    stats = {
         "num_patients" : len(labels),
         "positive_cases" : positive_cases,
         "negative_cases" : negative_cases,
         "total_boxes" : total_boxes
     }
 
-    return labels, dataset_summary
+    return labels, stats

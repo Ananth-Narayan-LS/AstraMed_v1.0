@@ -539,3 +539,21 @@ Expected Answer
 The dataset would return images along with bounding boxes and class labels. The training pipeline would switch to an object detection framework (e.g., Faster R-CNN, YOLO), and the DataLoader would use a custom collate_fn to handle variable numbers of boxes per image.
 
 
+# 📂 File: app/pages/05_Patient_Search.py
+132. Why validate the patient ID before loading the image?
+Expected Answer
+To prevent unnecessary file access and provide immediate feedback if the patient does not exist. It avoids runtime errors and improves user experience.
+133. Why generate the report dynamically instead of storing reports for every patient?
+Expected Answer
+The report is derived from the latest data. Generating it on demand avoids duplication, reduces storage, and ensures consistency if the underlying data changes.
+134. Why iterate over metadata.items() instead of referencing individual fields?
+Expected Answer
+It makes the UI resilient to schema changes. New metadata fields automatically appear without modifying the rendering code.
+135. Why provide a downloadable report?
+Expected Answer
+It demonstrates how processed results can be exported for sharing, documentation, or integration with downstream workflows, making the application more practical.
+136. How would you extend this page if AstraMed included model predictions?
+Expected Answer
+The report could include predicted probabilities, confidence scores, Grad-CAM visualizations, and comparisons between ground-truth labels and model predictions. This would transform the page from a dataset explorer into a clinical decision-support interface.
+
+

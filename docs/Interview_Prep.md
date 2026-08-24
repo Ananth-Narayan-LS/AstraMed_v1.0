@@ -557,3 +557,153 @@ Expected Answer
 The report could include predicted probabilities, confidence scores, Grad-CAM visualizations, and comparisons between ground-truth labels and model predictions. This would transform the page from a dataset explorer into a clinical decision-support interface.
 
 
+# 📂 File: src/data/dataloader.py
+56. What is the purpose of verifying the DataLoader before training a model?
+Expected Answer
+To ensure the entire data pipeline works correctly before introducing model-related complexity. This helps isolate bugs early in the development process.
+57. What does next(iter(train_loader)) do internally?
+Expected Answer
+It creates an iterator over the DataLoader and retrieves the first batch. Internally, the DataLoader requests sample indices, calls Dataset.__getitem__() for each sample, and collates them into a batch.
+58. Why is the image tensor shape (batch_size, 1, 256, 256)?
+Expected Answer
+- batch_size → Number of samples in the batch.
+- 1 → Single grayscale channel.
+- 256 × 256 → Image dimensions after preprocessing.
+This is the standard input format expected by CNNs.
+59. Why is the image datatype torch.float32?
+Expected Answer
+Neural networks perform floating-point computations. Converting images to float32 ensures compatibility with PyTorch layers and efficient GPU computation.
+60. Why are labels stored as integers instead of floats?
+Expected Answer
+Classification labels represent discrete classes (0 or 1). Loss functions like CrossEntropyLoss expect integer class indices rather than floating-point values.
+61. Why do we check for NaN and Inf values before training?
+Expected Answer
+NaN or Inf values can propagate through the network, causing unstable gradients, exploding losses, or complete training failure. Detecting them early prevents difficult debugging later.
+62. Why do all images in a batch need identical shapes?
+Expected Answer
+The DataLoader stacks individual tensors into a single batch tensor. Tensor stacking requires every sample to have exactly the same dimensions.
+63. Why do we visualize a batch before training?
+Expected Answer
+Visual inspection confirms that preprocessing, normalization, labels, and image orientation are correct. It is often the fastest way to detect pipeline errors.
+64. Why do we verify class distribution in a batch?
+Expected Answer
+To ensure that both classes are being loaded correctly and to identify severe class imbalance, which may require weighted loss functions or sampling strategies later.
+
+
+# 📂src/models/baseline_cnn.py
+66. Why do we build a baseline CNN before using pretrained models?
+Expected Answer
+A baseline provides a reference point. It helps measure whether more advanced architectures genuinely improve performance rather than assuming they do.
+67. Why does the first convolution use in_channels=1?
+Expected Answer
+Chest X-rays are grayscale images, so each image has a single channel.
+68. Why does the second convolution use in_channels=32?
+Expected Answer
+The second convolution receives the 32 feature maps produced by the first convolution as its input.
+69. What is the purpose of the ReLU activation?
+Expected Answer
+ReLU introduces non-linearity, allowing the network to learn complex patterns. It also helps mitigate the vanishing gradient problem compared to sigmoid or tanh in hidden layers.
+70. Why do we use MaxPooling?
+Expected Answer
+MaxPooling reduces spatial dimensions, decreases computation, increases the receptive field, and retains the most salient features.
+71. Why do we flatten the feature maps?
+Expected Answer
+Fully connected layers operate on vectors, so the 3D feature maps must be converted into a 1D representation.
+72. Why is the final layer Linear(128, 1)?
+Expected Answer
+The task is binary classification, so the network outputs a single logit (or probability after sigmoid) representing the likelihood of pneumonia.
+73. Why is the output shape (batch_size, 1)?
+Expected Answer
+Each image receives one prediction corresponding to the probability of belonging to the positive class (pneumonia).
+74. Why don't we use Batch Normalization or Dropout yet?
+Expected Answer
+The objective of a baseline is simplicity. Additional components introduce more variables, making it harder to evaluate the impact of future improvements.
+75. How would you improve this model in later experiments?
+Expected Answer
+Possible improvements include:
+- Adding Batch Normalization.
+- Introducing Dropout for regularization.
+- Increasing network depth.
+- Using residual connections.
+- Applying data augmentation.
+- Leveraging pretrained architectures such as ResNet or EfficientNet.
+- Fine-tuning hyperparameters.
+
+
+# 📂src/training/losses.py
+76. Why did you create a separate losses.py module?
+Expected Answer
+To separate training configuration from the training loop. This makes it easy to experiment with different loss functions without modifying the core training logic.
+77. Why are we using BCELoss for the baseline model?
+Expected Answer
+The model performs binary classification and its final layer applies a Sigmoid, producing probabilities between 0 and 1. BCELoss is designed to compare these probabilities against binary labels.
+78. What is the difference between BCELoss and BCEWithLogitsLoss?
+Expected Answer
+- BCELoss expects probabilities, so the model must include a Sigmoid.
+- BCEWithLogitsLoss expects raw logits and internally applies a numerically stable sigmoid operation. It is generally preferred for production models.
+79. Why don't we use CrossEntropyLoss?
+Expected Answer
+CrossEntropyLoss is intended for multi-class classification and expects class logits for two or more classes. Our baseline predicts a single probability for binary classification.
+(Note: You could also model binary classification with two output neurons and CrossEntropyLoss, but for this architecture a single-output binary formulation is simpler and more common.)
+
+
+# 📂src/training/optimizers.py
+80. Why did you create a separate optimizers.py module?
+Expected Answer
+To decouple optimizer selection from the training loop. This makes experimentation and configuration changes much easier.
+81. Why are we using Adam for the baseline?
+Expected Answer
+Adam combines momentum with adaptive learning rates, converges quickly on many problems, and requires less manual tuning than SGD, making it a strong default choice for an initial baseline.
+82. When would you choose SGD instead of Adam?
+Expected Answer
+SGD with momentum is often preferred for large-scale vision models because it can generalize better after careful tuning, although it may converge more slowly.
+83. Why is the learning rate set to 1e-3?
+Expected Answer
+1e-3 is a widely used default for Adam that provides a good balance between convergence speed and stability. It serves as a sensible starting point before hyperparameter tuning.
+84. Why does the optimizer receive model.parameters()?
+Expected Answer
+The optimizer needs access to all trainable parameters so it can update their values using the gradients computed during backpropagation.
+85. How would you extend this module for future experiments?
+Expected Answer
+You could add support for:
+- AdamW
+- RMSprop
+- Focal Loss
+- Weighted BCE for class imbalance
+- Learning rate schedulers
+- Optimizer configuration via YAML or JSON
+
+
+# 📂src/training/train.py
+86. Why do we call model.train() before training?
+Expected Answer
+It switches the model to training mode. Layers such as Dropout and Batch Normalization behave differently during training and evaluation. Calling model.train() ensures they operate correctly.
+87. Why do we move images and targets to the device?
+Expected Answer
+The model and data must reside on the same device (CPU or GPU). Otherwise, PyTorch raises a device mismatch error.
+88. Why do we convert targets to float()?
+Expected Answer
+BCELoss expects floating-point targets with values in the range [0, 1]. Our labels are integers, so we convert them to float.
+89. Why do we call unsqueeze(1) on the targets?
+Expected Answer
+The model outputs tensors of shape (batch_size, 1), while labels are initially (batch_size,). Adding a dimension makes their shapes compatible for loss computation.
+90. Why do we call optimizer.zero_grad() before backward()?
+Expected Answer
+PyTorch accumulates gradients by default. Calling zero_grad() clears gradients from the previous iteration so each update is based only on the current batch.
+91. What happens during the forward pass?
+Expected Answer
+The input images pass through the CNN, producing predicted probabilities for each sample.
+92. What does loss.backward() compute?
+Expected Answer
+It computes the gradients of the loss with respect to every trainable parameter using backpropagation.
+93. What does optimizer.step() do?
+Expected Answer
+It updates the model's parameters using the computed gradients according to the chosen optimization algorithm (e.g., Adam).
+94. Why do we accumulate loss.item() instead of loss?
+Expected Answer
+loss.item() converts the tensor to a Python scalar, avoiding unnecessary computation graph retention and reducing memory usage.
+95. Why do we return the average epoch loss instead of the last batch loss?
+Expected Answer
+The average loss reflects the model's performance across the entire dataset and is a more reliable metric for tracking training progress than the loss from a single batch.
+
+# 📂

@@ -37,6 +37,9 @@
 
 """
 
+
+# dataloader.py takes your custom RSNADataset and converts it into batches of images and labels that the CNN can efficiently train on.
+
 from torch.utils.data import DataLoader
 from src.data.dataset import RSNADataset
 

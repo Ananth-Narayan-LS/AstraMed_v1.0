@@ -706,4 +706,72 @@ loss.item() converts the tensor to a Python scalar, avoiding unnecessary computa
 Expected Answer
 The average loss reflects the model's performance across the entire dataset and is a more reliable metric for tracking training progress than the loss from a single batch.
 
-# 📂
+# 📂src/experiments/config.py
+1. Why use a dataclass for experiment configuration?
+A dataclass provides a structured container for configuration values while automatically generating methods such as __init__ and providing type annotations.
+2. Why centralize experiment configuration?
+To prevent hyperparameters from being hardcoded across multiple files and to ensure experiments are reproducible and comparable.
+3. Why generate experiment names automatically?
+An experiment name provides an identifiable record of the configuration used to produce a particular result.
+4. Why include the seed in the experiment name?
+Because the seed affects randomness and therefore can affect the resulting model.
+5. Why use Path instead of strings for directories?
+pathlib.Path provides an OS-independent and safer interface for filesystem operations.
+6. Why shouldn't we hardcode outputs/experiments in multiple files?
+Because duplicated path definitions create configuration drift and make the project harder to maintain.
+7. Why reuse src/utils/config.py?
+It already defines the project's root and major directory paths. Reusing it maintains a single source of truth for project paths.
+8. Why separate experiment configuration from training code?
+Configuration describes what experiment to run, while training code describes how training is performed. This is separation of concerns.
+src/utils/reproducibility.py
+9. Why do we need random seeds in machine learning?
+Machine-learning pipelines often contain stochastic operations. Setting seeds makes experiments more repeatable.
+10. Why set seeds for Python, NumPy and PyTorch separately?
+Each library maintains its own random-number generator.
+11. What does torch.manual_seed() control?
+It sets the random seed used by PyTorch's random-number generation.
+12. Why call torch.cuda.manual_seed_all()?
+It sets the CUDA random seed across available CUDA devices.
+13. What is the purpose of cudnn.deterministic = True?
+It asks cuDNN to use deterministic algorithms where supported, improving reproducibility.
+14. What is the disadvantage of deterministic execution?
+Deterministic algorithms can sometimes be slower than optimized nondeterministic algorithms.
+src/experiments/tracker.py
+15. Why do we need an experiment tracker?
+To persist configuration, metadata, training history and experiment status rather than relying only on terminal output.
+16. Why store training history separately from metadata?
+Metadata describes the experiment itself, while history describes the results produced during training.
+17. Why save experiment results as JSON?
+JSON is lightweight, human-readable and easy for Python and other tools to consume.
+18. Why track model metadata?
+It allows us to compare model performance together with computational characteristics such as parameter count and device.
+19. Why record experiment status?
+It lets us distinguish between experiments that completed successfully and experiments that failed during execution.
+
+
+# 📂 🎤 Interview questions — Milestone 2
+src/data/advanced_input.py
+Q1. Why does an ImageNet-pretrained model require 3 channels?
+Because the original ImageNet models were trained on RGB images, so their first convolutional layer expects 3 input channels.
+Q2. Why not modify RSNADataset to return 3 channels?
+Because the dataset is a shared data-layer component and the existing Sprint 4 baseline depends on its [B,1,H,W] contract. Modifying it would unnecessarily couple the dataset to Sprint 5 model requirements.
+Q3. Why replicate grayscale instead of learning a grayscale-to-RGB conversion?
+Replication preserves the original X-ray information without introducing another trainable transformation or changing the experimental comparison.
+Q4. Does channel replication create actual RGB information?
+No. It creates three copies of the same grayscale information. It only satisfies the expected three-channel tensor interface.
+Q5. Why use ImageNet normalization?
+Because pretrained ImageNet weights were learned under that preprocessing convention, so using the corresponding normalization helps maintain compatibility with the pretrained feature representations.
+Q6. Why resize to 224 instead of keeping 512?
+224 is the standard input resolution for many ImageNet-pretrained architectures and significantly reduces memory and computation, which is important for controlled comparisons on the available GPU.
+Q7. Why have both dataset_image_size and model_image_size?
+Because the dataset layer and model-input layer have different responsibilities. The dataset maintains a canonical representation, while the adapter prepares that representation for the advanced model.
+src/experiments/config.py
+Q8. Why should image size be part of experiment configuration?
+Because preprocessing is part of an experiment's definition. Recording it makes experiments reproducible and comparable.
+Q9. What happens if every model handles preprocessing differently?
+The architecture comparison becomes confounded because differences in performance could come from preprocessing rather than the model architecture.
+Q10. Why is this adapter better than putting repeat() inside ResNet code?
+Because the adapter separates input preparation from model architecture. Every advanced model can therefore consume the same standardized tensor interface.
+
+
+# 📂 

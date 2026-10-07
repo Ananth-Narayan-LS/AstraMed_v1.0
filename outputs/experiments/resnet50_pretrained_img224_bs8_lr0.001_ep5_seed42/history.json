@@ -1,0 +1,10 @@
+[
+    {
+        "epoch": 1,
+        "train_loss": 0.5329,
+        "val_loss": 0.5186,
+        "metrics": {
+            "roc_auc": 0.7269
+        }
+    }
+]

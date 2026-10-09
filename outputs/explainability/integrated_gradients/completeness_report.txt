@@ -1,0 +1,13 @@
+Integrated Gradients Completeness Report
+Patient ID: 00436515-870c-4b36-a041-de91049b9ab4
+Ground-truth label: 1
+Predicted pneumonia probability: 0.848188
+Target: positive
+Baseline: zero
+Integration steps: 128
+Input score: 1.72045875
+Baseline score: -0.11666516
+Score difference: 1.83712387
+Attribution sum: 1.87057686
+Completeness delta: 0.03345299
+Absolute completeness delta: 0.03345299

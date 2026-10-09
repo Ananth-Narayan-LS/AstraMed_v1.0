@@ -29,8 +29,12 @@ def load_labels(
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV FILE NOT FOUND : {csv_path}")
 
-    df = pd.read_csv(csv_path)
+    #df = pd.read_csv(csv_path)
 
+    # Avoid Arrow-backed string arrays while loading labels.
+    with pd.option_context("mode.string_storage", "python"):
+        df = pd.read_csv(csv_path)
+        
     labels = {}
 
     positive_cases = 0

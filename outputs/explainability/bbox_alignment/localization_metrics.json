@@ -1,0 +1,63 @@
+{
+  "patient_id": "00436515-870c-4b36-a041-de91049b9ab4",
+  "ground_truth_target": 1,
+  "original_image_shape": [
+    1024,
+    1024
+  ],
+  "bounding_boxes": [
+    {
+      "x": 264.0,
+      "y": 152.0,
+      "width": 213.0,
+      "height": 379.0
+    },
+    {
+      "x": 562.0,
+      "y": 152.0,
+      "width": 256.0,
+      "height": 453.0
+    }
+  ],
+  "threshold_percentile": 80,
+  "coordinate_space": "original_dicom_pixels",
+  "results": {
+    "resnet50_gradcam": {
+      "threshold_percentile": 80,
+      "threshold_value": 0.5285987257957458,
+      "box_area_pixels": 196695,
+      "predicted_area_pixels": 209716,
+      "intersection_pixels": 89007,
+      "precision": 0.4244168303801331,
+      "recall": 0.4525127735834668,
+      "f1": 0.43801471908978845,
+      "iou": 0.28042179682675705,
+      "pointing_game_hit": false,
+      "energy_inside_boxes": 0.3321453928947449,
+      "has_boxes": true,
+      "pneumonia_probability": 0.8481879234313965
+    },
+    "vit_b16_attention": {
+      "threshold_percentile": 80,
+      "threshold_value": 0.6865760087966919,
+      "box_area_pixels": 196695,
+      "predicted_area_pixels": 209716,
+      "intersection_pixels": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "iou": 0.0,
+      "pointing_game_hit": false,
+      "energy_inside_boxes": 0.17947550117969513,
+      "has_boxes": true,
+      "pneumonia_probability": 0.5804969668388367
+    }
+  },
+  "limitations": [
+    "Single-patient result; not a dataset-level evaluation.",
+    "Threshold percentile affects pixel overlap metrics.",
+    "Attention and Grad-CAM are not causal explanations.",
+    "Bounding boxes annotate regions, not every diseased pixel.",
+    "Metrics do not establish clinical validity."
+  ]
+}

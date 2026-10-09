@@ -1,0 +1,22 @@
+{
+  "seed": 42,
+  "requested_max_cases": 100,
+  "successful_patients": 100,
+  "failed_patients": 0,
+  "thresholds": [
+    50,
+    70,
+    80,
+    90
+  ],
+  "evaluated_split": "test",
+  "positive_cases_only": true,
+  "failures": [],
+  "limitations": [
+    "Screening-trained checkpoints, not clinical validation.",
+    "Positive patients with bounding boxes only.",
+    "Metrics depend on heatmap threshold.",
+    "Bounding boxes are imperfect proxies for disease extent.",
+    "Per-patient observations may have varying annotation areas."
+  ]
+}

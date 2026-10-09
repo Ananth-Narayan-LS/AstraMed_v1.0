@@ -1,0 +1,30 @@
+{
+  "model_name": "vit_b16",
+  "display_name": "ViT-B/16",
+  "status": "completed",
+  "original_metadata_status": "completed",
+  "experiment_name": "vit_b16_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "experiment_directory": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\vit_b16_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "pretrained": true,
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "seed": 42,
+  "configured_epochs": 2,
+  "recorded_epochs": 2,
+  "train_samples": 1000,
+  "val_samples": 300,
+  "metrics": {
+    "roc_auc": 0.7566666666666667,
+    "pr_auc": 0.7418246208612278,
+    "recall": 0.9,
+    "precision": 0.5793991416309013,
+    "f1": 0.7049608355091384
+  },
+  "parameters": 85799425,
+  "training_time_seconds": 243.55368259998795,
+  "peak_gpu_memory_mb": 1826.76806640625,
+  "best_validation_loss": 0.657181224822998,
+  "selected_epoch": 1,
+  "checkpoint": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\vit_b16_pretrained_img224_bs4_lr0.0001_ep2_seed42\\checkpoints\\best_model.pth",
+  "note": "Do not use smoke tests or incomplete histories to select the final model. Missing values are not zero."
+}

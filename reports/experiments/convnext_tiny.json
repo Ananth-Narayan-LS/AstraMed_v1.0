@@ -1,0 +1,30 @@
+{
+  "model_name": "convnext_tiny",
+  "display_name": "ConvNeXt-Tiny",
+  "status": "completed",
+  "original_metadata_status": "completed",
+  "experiment_name": "convnext_tiny_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "experiment_directory": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\convnext_tiny_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "pretrained": true,
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "seed": 42,
+  "configured_epochs": 2,
+  "recorded_epochs": 2,
+  "train_samples": 1000,
+  "val_samples": 300,
+  "metrics": {
+    "roc_auc": 0.8205777777777777,
+    "pr_auc": 0.783133506797719,
+    "recall": 0.8333333333333334,
+    "precision": 0.7183908045977011,
+    "f1": 0.7716049382716049
+  },
+  "parameters": 27820897,
+  "training_time_seconds": 213.8129026000097,
+  "peak_gpu_memory_mb": 887.73046875,
+  "best_validation_loss": 0.5187832731008529,
+  "selected_epoch": 1,
+  "checkpoint": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\convnext_tiny_pretrained_img224_bs4_lr0.0001_ep2_seed42\\checkpoints\\best_model.pth",
+  "note": "Do not use smoke tests or incomplete histories to select the final model. Missing values are not zero."
+}

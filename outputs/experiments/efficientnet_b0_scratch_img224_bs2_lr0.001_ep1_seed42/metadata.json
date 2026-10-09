@@ -1,0 +1,28 @@
+{
+    "created_at": "2026-10-09T16:46:35.716052",
+    "status": "completed",
+    "model_name": "efficientnet_b0",
+    "pretrained": false,
+    "device": "cuda",
+    "seed": 42,
+    "dataset_image_size": 512,
+    "model_image_size": 224,
+    "use_imagenet_normalization": true,
+    "batch_size": 2,
+    "learning_rate": 0.001,
+    "epochs": 1,
+    "train_samples": 8,
+    "validation_samples": 4,
+    "total_parameters": 4008829,
+    "trainable_parameters": 4008829,
+    "label_stats": {
+        "num_patients": 26684,
+        "positive_cases": 6012,
+        "negative_cases": 20672,
+        "total_boxes": 9555
+    },
+    "training_time_seconds": 3.9130344000004698,
+    "peak_gpu_memory_mb": 252.23876953125,
+    "best_validation_loss": 0.6931730806827545,
+    "best_checkpoint": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\efficientnet_b0_scratch_img224_bs2_lr0.001_ep1_seed42\\checkpoints\\best_model.pth"
+}

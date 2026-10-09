@@ -1,0 +1,30 @@
+﻿Model,ROC-AUC,PR-AUC,Recall,Precision,F1,Params,Time (s),GPU Mem (MB),Status
+Baseline CNN,0.727,,0.003,0.333,0.007,,,,provided_baseline_values
+ResNet-50,0.8356,0.817920571086737,0.8266666666666667,0.7607361963190185,0.792332268370607,23510081,227.27822319998813,735.4609375,completed
+DenseNet-121,0.8017333333333333,0.7752369764835296,0.7733333333333333,0.7160493827160493,0.7435897435897436,6954881,250.44978999999876,637.05615234375,completed
+EfficientNet-B0,0.8206666666666667,0.7615174920578396,0.8333333333333334,0.7102272727272727,0.7668711656441718,4008829,201.3503950000013,427.26025390625,completed
+ConvNeXt-Tiny,0.8205777777777777,0.783133506797719,0.8333333333333334,0.7183908045977011,0.7716049382716049,27820897,213.8129026000097,887.73046875,completed
+ViT-B/16,0.7566666666666667,0.7418246208612278,0.9,0.5793991416309013,0.7049608355091384,85799425,243.55368259998795,1826.76806640625,completed
+
+
+## Preliminary Model Selection
+
+### Selected candidate: ResNet-50
+
+ResNet-50 is selected as the provisional candidate for the next stage of AstraMed experiments. In the current screening benchmark, it achieved a ROC-AUC of 0.8356, PR-AUC of 0.8179, and F1-score of 0.7923.
+
+### Efficiency alternative: EfficientNet-B0
+
+EfficientNet-B0 is retained as the efficiency-focused alternative. It achieved a ROC-AUC of 0.8207 while using approximately 427 MB of peak GPU memory and taking approximately 201 seconds for the screening run.
+
+### Experimental limitations
+
+The comparison used pretrained models, 224 × 224 model inputs, a batch size of 4, a learning rate of 0.0001, two epochs, 1,000 training samples, and 300 validation samples. Results are preliminary and may change with longer training and larger datasets.
+
+The baseline CNN values were supplied separately and should be verified against their original experiment configuration before direct comparison.
+
+### Next-stage validation
+
+Before finalizing the model, train the strongest candidates for longer, compare them using the same patient-level data split, examine sensitivity and specificity, and evaluate the selected model on a held-out test set that was not used for model selection.
+
+**Decision:** ResNet-50 is the provisional candidate; final selection remains subject to further validation.

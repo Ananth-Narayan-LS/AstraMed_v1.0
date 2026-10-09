@@ -1,0 +1,28 @@
+{
+    "created_at": "2026-10-09T17:40:52.519505",
+    "status": "completed",
+    "model_name": "convnext_tiny",
+    "pretrained": true,
+    "device": "cuda",
+    "seed": 42,
+    "dataset_image_size": 512,
+    "model_image_size": 224,
+    "use_imagenet_normalization": true,
+    "batch_size": 4,
+    "learning_rate": 0.0001,
+    "epochs": 2,
+    "train_samples": 1000,
+    "validation_samples": 300,
+    "total_parameters": 27820897,
+    "trainable_parameters": 27820897,
+    "label_stats": {
+        "num_patients": 26684,
+        "positive_cases": 6012,
+        "negative_cases": 20672,
+        "total_boxes": 9555
+    },
+    "training_time_seconds": 213.8129026000097,
+    "peak_gpu_memory_mb": 887.73046875,
+    "best_validation_loss": 0.5187832731008529,
+    "best_checkpoint": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\convnext_tiny_pretrained_img224_bs4_lr0.0001_ep2_seed42\\checkpoints\\best_model.pth"
+}

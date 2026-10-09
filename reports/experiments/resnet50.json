@@ -1,0 +1,30 @@
+{
+  "model_name": "resnet50",
+  "display_name": "ResNet-50",
+  "status": "completed",
+  "original_metadata_status": "completed",
+  "experiment_name": "resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "experiment_directory": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "pretrained": true,
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "seed": 42,
+  "configured_epochs": 2,
+  "recorded_epochs": 2,
+  "train_samples": 1000,
+  "val_samples": 300,
+  "metrics": {
+    "roc_auc": 0.8356,
+    "pr_auc": 0.817920571086737,
+    "recall": 0.8266666666666667,
+    "precision": 0.7607361963190185,
+    "f1": 0.792332268370607
+  },
+  "parameters": 23510081,
+  "training_time_seconds": 227.27822319998813,
+  "peak_gpu_memory_mb": 735.4609375,
+  "best_validation_loss": 0.5095326399803162,
+  "selected_epoch": 2,
+  "checkpoint": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42\\checkpoints\\best_model.pth",
+  "note": "Do not use smoke tests or incomplete histories to select the final model. Missing values are not zero."
+}

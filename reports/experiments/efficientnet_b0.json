@@ -1,0 +1,30 @@
+{
+  "model_name": "efficientnet_b0",
+  "display_name": "EfficientNet-B0",
+  "status": "completed",
+  "original_metadata_status": "completed",
+  "experiment_name": "efficientnet_b0_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "experiment_directory": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\efficientnet_b0_pretrained_img224_bs4_lr0.0001_ep2_seed42",
+  "pretrained": true,
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "seed": 42,
+  "configured_epochs": 2,
+  "recorded_epochs": 2,
+  "train_samples": 1000,
+  "val_samples": 300,
+  "metrics": {
+    "roc_auc": 0.8206666666666667,
+    "pr_auc": 0.7615174920578396,
+    "recall": 0.8333333333333334,
+    "precision": 0.7102272727272727,
+    "f1": 0.7668711656441718
+  },
+  "parameters": 4008829,
+  "training_time_seconds": 201.3503950000013,
+  "peak_gpu_memory_mb": 427.26025390625,
+  "best_validation_loss": 0.5332275370756785,
+  "selected_epoch": 2,
+  "checkpoint": "C:\\Users\\Ananth Narayan L S\\Desktop\\Projects\\AstraMed_v1.0\\outputs\\experiments\\efficientnet_b0_pretrained_img224_bs4_lr0.0001_ep2_seed42\\checkpoints\\best_model.pth",
+  "note": "Do not use smoke tests or incomplete histories to select the final model. Missing values are not zero."
+}

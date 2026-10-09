@@ -774,4 +774,117 @@ Q10. Why is this adapter better than putting repeat() inside ResNet code?
 Because the adapter separates input preparation from model architecture. Every advanced model can therefore consume the same standardized tensor interface.
 
 
+# 📂 src/models/resnet.py
+Q1. Why use pretrained ResNet-50?
+It starts with features learned from ImageNet, potentially reducing the amount of medical-image training needed compared with learning every feature from scratch.
+Q2. Why replace the final classification layer?
+The original head predicts 1,000 ImageNet classes. Our task requires one binary-classification logit.
+Q3. Why return logits instead of probabilities?
+The advanced training pipeline uses BCEWithLogitsLoss, which combines sigmoid and binary cross-entropy in a numerically stable operation.
+Q4. Why use the model factory from this file?
+It avoids duplicating architecture-construction logic and keeps all model creation consistent.
+scripts/test_resnet50.py
+Q5. Why run model.eval()?
+It switches layers such as BatchNorm into evaluation behavior instead of updating their training statistics.
+Q6. Why use torch.no_grad()?
+It disables gradient tracking during inference, reducing memory consumption.
+Q7. Why count total and trainable parameters separately?
+Total parameters describe model size. Trainable parameters show how many parameters currently have requires_grad=True.
+Q8. Does a successful forward pass prove that ResNet-50 detects pneumonia accurately?
+No. It proves that the input can pass through the model and produce a valid output. Accuracy requires training or evaluation on labeled data.
+
+# 📂 src/models/densenet.py
+Q1. What is DenseNet?
+DenseNet is a convolutional neural network architecture in which each layer receives feature maps from earlier layers within a dense block.
+Q2. What is feature reuse?
+Instead of discarding earlier representations, subsequent layers can use features extracted by preceding layers.
+Q3. Why replace the classifier?
+The original classifier predicts 1,000 ImageNet classes. Our task requires one binary-classification logit.
+Q4. Why use the model factory?
+It centralizes model construction and keeps architecture-specific code out of the training pipeline.
+scripts/test_densenet121.py
+Q5. Why use pretrained=True?
+To initialize DenseNet-121 with weights learned on ImageNet instead of random initialization.
+Q6. Why use model.eval() and torch.no_grad()?
+model.eval() switches layers into evaluation behavior, while torch.no_grad() avoids storing gradients during inference.
+Q7. Why count parameters?
+Parameter count helps compare model size and computational requirements, although it does not directly measure detection quality.
+Q8. Does the smoke test establish that DenseNet is better than ResNet?
+No. It establishes that the model loads and runs correctly. Comparing performance requires controlled training and validation.
+
+
+# 📂 src/models/efficientnet.py
+Q1. Why choose EfficientNet-B0?
+It is the baseline variant of the EfficientNet family, designed to balance model size and computational cost. It is a sensible starting point for a GPU with limited memory.
+Q2. What is compound scaling?
+EfficientNet scales network depth, width, and input resolution together using a coordinated scaling strategy.
+Q3. Why replace the classification head?
+The original model predicts 1,000 ImageNet classes; AstraMed needs a single binary-classification logit.
+Q4. Why reuse the model factory?
+It centralizes architecture construction and avoids duplicating model-specific code.
+scripts/test_efficientnet_b0.py
+Q5. Why test with a batch size of one?
+It is a lightweight way to verify model construction and inference before committing to larger batches or training.
+Q6. Does low parameter count guarantee low GPU memory usage?
+No. Activations, intermediate feature maps, gradients, optimizer states, and batch size also affect memory consumption.
+Q7. Does this smoke test establish EfficientNet-B0's accuracy?
+No. It verifies that the model runs correctly. Accuracy must be measured on labeled validation data after training or appropriate evaluation.
+
+# 📂src/models/convnext.py
+Q1. What is ConvNeXt?
+A convolutional neural network architecture that modernizes conventional CNN design using ideas inspired by newer deep-learning architectures.
+Q2. Why ConvNeXt-Tiny instead of a larger variant?
+It is a reasonable starting point for limited GPU memory while still providing a modern architecture to evaluate.
+Q3. Why replace the classifier?
+The original head predicts 1,000 ImageNet classes. AstraMed requires one binary-classification logit.
+Q4. Why reuse model_factory.py?
+It centralizes model creation, prevents duplicated implementations, and keeps training code independent of architecture-specific details.
+scripts/test_convnext_tiny.py
+Q5. Why test a forward pass before training?
+It catches model construction, tensor-shape, device-placement, and output-shape errors before spending time on training.
+Q6. Does a successful CUDA forward pass guarantee training will fit in GPU memory?
+No. Training requires additional memory for gradients, optimizer states, and saved activations.
+Q7. Why record parameter count and GPU memory?
+They help compare model complexity and inference resource requirements alongside validation performance.
+
+
+# 📂 src/models/vit.py
+Q1. How does Vision Transformer process an image?
+It divides the image into patches, converts each patch into an embedding, adds positional information, and processes the resulting token sequence using transformer layers.
+Q2. What does /16 mean in ViT-B/16?
+The image is divided into patches of \(16 \times 16\) pixels. For a 224 × 224 image, that produces 196 image patches.
+Q3. Why does ViT use positional embeddings?
+Self-attention does not inherently encode the spatial order of tokens. Positional embeddings provide information about where patches occur in the image.
+Q4. Why replace the classification head?
+The pretrained head predicts 1,000 ImageNet classes. AstraMed needs one binary-classification logit.
+scripts/test_vit_b16.py
+Q5. Why test at batch size one?
+It minimizes memory requirements while verifying that the model can process an image successfully.
+Q6. Why is input resolution important for ViT?
+Changing resolution changes the patch grid and the number of tokens. The pretrained model's positional embeddings and input configuration must support the chosen resolution.
+Q7. Does a successful forward pass prove that ViT is good at detecting pneumonia?
+No. It verifies the implementation and tensor flow. Detection performance must be measured on labeled data.
+
+
+# 📂 7. Interview questions — Milestone 9
+src/experiments/runner.py
+Q1. Why build a unified experiment runner?
+It standardizes training and evaluation across architectures, reducing duplicated code and making experiments easier to reproduce.
+Q2. Why use a wrapper around advanced models?
+It inserts preprocessing into the forward path without modifying the existing dataset or baseline implementation.
+Q3. Why use different loss functions for the baseline and advanced models?
+The baseline outputs sigmoid probabilities and uses BCELoss. The advanced models output logits and use BCEWithLogitsLoss.
+Q4. Why track PR-AUC as well as ROC-AUC?
+PR-AUC emphasizes the precision-recall tradeoff and is particularly informative when positive cases are relatively uncommon.
+Q5. Why save the best checkpoint using validation loss?
+It provides a consistent checkpoint-selection rule. We should still inspect validation metrics such as ROC-AUC and recall before deciding which model is best overall.
+Q6. Why not use the test set during architecture selection?
+Repeatedly tuning against test results leaks information from the test set into model selection, producing an overly optimistic estimate of generalization.
+scripts/run_experiment.py
+Q7. Why have a separate script for launching experiments?
+It separates command-line execution from the reusable runner, allowing the same runner to be called by scripts, notebooks, or other orchestration tools.
+Q8. Why start with a tiny smoke test?
+It detects integration errors before committing significant compute time to a full training run.
+
+
 # 📂 

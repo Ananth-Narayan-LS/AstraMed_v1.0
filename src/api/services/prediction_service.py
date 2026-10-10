@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pydicom
 import torch
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 from src.data.advanced_input import AdvancedInputAdapter
 from src.data.preprocessing import preprocess_image
@@ -17,16 +17,20 @@ from src.utils.config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-CHECKPOINT_PATH = (
-    PROJECT_ROOT
-    / "outputs"
-    / "experiments"
-    / "resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42"
-    / "checkpoints"
-    / "best_model.pth"
-)
+EXPERIMENTS_DIR = PROJECT_ROOT / "outputs" / "experiments"
+
+CHECKPOINT_PATHS = {
+    "resnet50": (
+        EXPERIMENTS_DIR
+        / "resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42"
+        / "checkpoints"
+        / "best_model.pth"
+    ),
+}
 
 PREDICTION_THRESHOLD = 0.5
+
+SUPPORTED_MODELS = {"resnet50", "vit_b16"}
 
 
 class PredictionServiceError(Exception):
@@ -51,39 +55,90 @@ class PredictionOutput:
     model_version: str
 
 
-@lru_cache(maxsize=1)
-def _load_model_bundle():
-    """Load the verified local checkpoint once per process."""
+def _resolve_checkpoint(model_name: str) -> Path:
+    """Resolve a local checkpoint without substituting pretrained weights."""
+    if model_name == "resnet50":
+        checkpoint_path = CHECKPOINT_PATHS["resnet50"]
 
-    if not CHECKPOINT_PATH.is_file():
+    elif model_name == "vit_b16":
+        matches = sorted(
+            EXPERIMENTS_DIR.glob(
+                "vit_b16*/checkpoints/best_model.pth"
+            )
+        )
+
+        if not matches:
+            raise PredictionServiceError(
+                "CHECKPOINT_NOT_FOUND",
+                "No local ViT-B/16 best_model.pth checkpoint was found "
+                "under outputs/experiments/vit_b16*/checkpoints/.",
+                503,
+            )
+
+        if len(matches) > 1:
+            raise PredictionServiceError(
+                "AMBIGUOUS_CHECKPOINT",
+                "Multiple ViT-B/16 checkpoints were found. Configure "
+                "the intended experiment checkpoint explicitly.",
+                500,
+            )
+
+        checkpoint_path = matches[0]
+
+    else:
+        raise PredictionServiceError(
+            "UNSUPPORTED_MODEL",
+            f"Model {model_name!r} is not supported.",
+            422,
+        )
+
+    if not checkpoint_path.is_file():
         raise PredictionServiceError(
             "CHECKPOINT_NOT_FOUND",
-            "The configured ResNet-50 checkpoint was not found.",
+            f"The local checkpoint for {model_name} was not found: "
+            f"{checkpoint_path}",
             503,
         )
 
+    return checkpoint_path
+
+
+@lru_cache(maxsize=2)
+def _load_model_bundle(model_name: str):
+    """Load and cache a model, its adapter, device, and checkpoint version."""
+    model_name = model_name.lower().strip()
+
+    if model_name not in SUPPORTED_MODELS:
+        raise PredictionServiceError(
+            "UNSUPPORTED_MODEL",
+            f"Model {model_name!r} is not supported.",
+            422,
+        )
+
+    checkpoint_path = _resolve_checkpoint(model_name)
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
     )
 
     try:
         checkpoint = torch.load(
-            CHECKPOINT_PATH,
+            checkpoint_path,
             map_location=device,
             weights_only=True,
         )
 
-        if "model_state_dict" not in checkpoint:
+        if (
+            not isinstance(checkpoint, dict)
+            or "model_state_dict" not in checkpoint
+        ):
             raise PredictionServiceError(
                 "INVALID_CHECKPOINT",
                 "The checkpoint has no model_state_dict.",
                 500,
             )
 
-        model = build_model(
-            "resnet50",
-            pretrained=False,
-        )
+        # Build the requested architecture without downloading pretrained weights.
+        model = build_model(model_name, pretrained=False)
 
         model.load_state_dict(
             checkpoint["model_state_dict"],
@@ -101,23 +156,30 @@ def _load_model_bundle():
         adapter.eval()
 
         epoch = checkpoint.get("epoch", "unknown")
+        model_version = f"checkpoint-epoch-{epoch}"
 
         logger.info(
-            "Loaded ResNet-50 checkpoint: device=%s epoch=%s",
+            "Loaded model=%s device=%s epoch=%s checkpoint=%s",
+            model_name,
             device,
             epoch,
+            checkpoint_path,
         )
 
-        return model, adapter, device, str(epoch)
+        return model, adapter, device, model_version
 
     except PredictionServiceError:
         raise
 
     except Exception as exc:
-        logger.exception("Could not load the prediction checkpoint.")
+        logger.exception(
+            "Could not load the %s prediction checkpoint.",
+            model_name,
+        )
         raise PredictionServiceError(
             "MODEL_LOAD_FAILED",
-            "The local prediction model could not be loaded.",
+            f"The local {model_name} checkpoint could not be loaded. "
+            "Check that its architecture matches the model factory.",
             503,
         ) from exc
 
@@ -126,12 +188,7 @@ def _decode_uploaded_image(
     content: bytes,
     image_format: str,
 ) -> np.ndarray:
-    """
-    Decode an already validated upload into a 2D grayscale array.
-
-    The array is passed through AstraMed's existing preprocessing.
-    """
-
+    """Decode an already-validated upload into a 2D grayscale array."""
     try:
         if image_format == "DICOM":
             dataset = pydicom.dcmread(
@@ -142,9 +199,7 @@ def _decode_uploaded_image(
 
         elif image_format in {"PNG", "JPEG"}:
             with Image.open(BytesIO(content)) as source:
-                image = np.asarray(
-                    source.convert("L")
-                ).copy()
+                image = np.asarray(source.convert("L")).copy()
 
         else:
             raise PredictionServiceError(
@@ -181,44 +236,83 @@ def _decode_uploaded_image(
         ) from exc
 
 
-def predict_image(
+def _prepare_model_input(
+    image: np.ndarray,
+    adapter: AdvancedInputAdapter,
+    device: torch.device,
+):
+    """
+    Return the original grayscale image and model input.
+
+    Model input shape: [1, 3, 224, 224].
+    """
+    processed = preprocess_image(
+        image,
+        target_size=(512, 512),
+    )
+
+    input_tensor = torch.from_numpy(
+        np.asarray(processed, dtype=np.float32)
+    ).float().unsqueeze(0).unsqueeze(0)
+
+    input_tensor = input_tensor.to(device)
+
+    with torch.no_grad():
+        model_input = adapter(input_tensor)
+
+    if tuple(model_input.shape) != (1, 3, 224, 224):
+        raise PredictionServiceError(
+            "INVALID_MODEL_INPUT_SHAPE",
+            f"Expected model input [1, 3, 224, 224], got "
+            f"{tuple(model_input.shape)}.",
+            500,
+        )
+
+    return image.copy(), model_input
+
+
+def predict_with_context(
     content: bytes,
     image_format: str,
-) -> PredictionOutput:
-    """Run local ResNet-50 pneumonia inference."""
+    model_name: str = "resnet50",
+):
+    """
+    Run inference and return context for explanation generation.
 
-    model, adapter, device, epoch = _load_model_bundle()
+    Returns:
+        (PredictionOutput, model, model_input, original_grayscale)
+
+    The model_input is the same tensor used for the prediction.
+    """
+    model_name = model_name.lower().strip()
+
+    model, adapter, device, model_version = _load_model_bundle(
+        model_name
+    )
 
     image = _decode_uploaded_image(
         content=content,
         image_format=image_format,
     )
 
-    # Existing AstraMed preprocessing: grayscale -> 512x512 -> [0, 1].
-    processed = preprocess_image(
-        image,
-        target_size=(512, 512),
+    original_grayscale, model_input = _prepare_model_input(
+        image=image,
+        adapter=adapter,
+        device=device,
     )
-
-    # Convert [H, W] NumPy array to [B, C, H, W].
-    input_tensor = torch.from_numpy(
-        processed
-    ).float().unsqueeze(0).unsqueeze(0)
-
-    input_tensor = input_tensor.to(device)
-
-    # Existing adapter: [1, 1, 512, 512] -> [1, 3, 224, 224].
-    input_tensor = adapter(input_tensor)
 
     try:
         with torch.inference_mode():
-            logits = model(input_tensor)
+            logits = model(model_input)
 
-            # This model returns logits, not probabilities.
+            # Both supported classifiers must return logits.
             probability = torch.sigmoid(logits).reshape(-1)[0].item()
 
     except Exception as exc:
-        logger.exception("Local model inference failed.")
+        logger.exception(
+            "Local %s inference failed.",
+            model_name,
+        )
         raise PredictionServiceError(
             "INFERENCE_FAILED",
             "The model could not complete inference.",
@@ -231,10 +325,25 @@ def predict_image(
         else "normal"
     )
 
-    return PredictionOutput(
+    result = PredictionOutput(
         pneumonia_probability=float(probability),
         predicted_class=predicted_class,
         threshold=PREDICTION_THRESHOLD,
-        model_name="resnet50",
-        model_version=f"checkpoint-epoch-{epoch}",
+        model_name=model_name,
+        model_version=model_version,
     )
+
+    return result, model, model_input, original_grayscale
+
+
+def predict_image(
+    content: bytes,
+    image_format: str,
+) -> PredictionOutput:
+    """Backward-compatible M3 inference interface."""
+    result, _, _, _ = predict_with_context(
+        content=content,
+        image_format=image_format,
+        model_name="resnet50",
+    )
+    return result

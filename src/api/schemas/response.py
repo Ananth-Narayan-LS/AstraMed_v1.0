@@ -15,11 +15,17 @@ class PredictionResult(BaseModel):
     threshold: float = Field(ge=0.0, le=1.0)
 
 
+
 class ExplanationResult(BaseModel):
     method: Literal["gradcam", "attention"]
-    heatmap_base64: str | None = None
+
+    original_image_base64: str
+    heatmap_base64: str
     overlay_base64: str | None = None
+
     image_mime_type: Literal["image/png"] = "image/png"
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
 
 
 class ModelMetadata(BaseModel):
@@ -31,13 +37,27 @@ class TimingMetadata(BaseModel):
     total_ms: float = Field(ge=0.0)
 
 
-class PredictionResponse(BaseModel):
+class PredictionWithExplanationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: str
     status: Literal["success"] = "success"
     prediction: PredictionResult
     explanation: ExplanationResult
+    model: ModelMetadata
+    timing: TimingMetadata
+
+
+class PredictionResponse(PredictionWithExplanationResponse):
+    """Backward-compatible response schema."""
+
+
+class InferenceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    status: Literal["success"] = "success"
+    prediction: PredictionResult
     model: ModelMetadata
     timing: TimingMetadata
 
@@ -50,13 +70,3 @@ class UploadValidationResponse(BaseModel):
     size_bytes: int = Field(gt=0)
     width: int = Field(gt=0)
     height: int = Field(gt=0)
-
-
-class InferenceResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    request_id: str
-    status: Literal["success"] = "success"
-    prediction: PredictionResult
-    model: ModelMetadata
-    timing: TimingMetadata

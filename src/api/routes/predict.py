@@ -1,23 +1,32 @@
-
 import logging
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from src.api.config import settings
 from src.api.schemas.common import ErrorResponse
-from src.api.schemas.response import InferenceResponse
+from src.api.schemas.response import PredictionWithExplanationResponse
+
 from src.api.services.image_validation import (
     UploadValidationError,
     validate_uploaded_image,
 )
 from src.api.services.prediction_service import (
     PredictionServiceError,
-    predict_image,
+    predict_with_context,
 )
+from src.api.services.explanation_service import (
+    ExplanationServiceError,
+    compute_heatmap,
+    render_explanation,
+)
+from src.api.services.explanation_compatibility import (
+    validate_explanation_compatibility,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -46,51 +55,34 @@ def error_response(
 
 @router.post(
     "/predict",
-    summary="Predict pneumonia from a chest X-ray",
+    summary="Predict pneumonia and generate an explanation",
     description=(
-        "Validates an uploaded PNG, JPEG, or DICOM image and runs "
-        "the local ResNet-50 checkpoint. Research prototype; "
-        "not for clinical diagnosis."
+        "Validates a PNG, JPEG, or DICOM image and returns a local "
+        "model prediction with a Grad-CAM or ViT attention heatmap. "
+        "Research prototype; not for clinical diagnosis."
     ),
-    response_model=InferenceResponse,
+    response_model=PredictionWithExplanationResponse,
     responses={
-        400: {
-            "model": ErrorResponse,
-            "description": "Invalid or corrupted image.",
-        },
-        413: {
-            "model": ErrorResponse,
-            "description": "Upload exceeds the configured size limit.",
-        },
-        415: {
-            "model": ErrorResponse,
-            "description": "Unsupported image format.",
-        },
-        500: {
-            "model": ErrorResponse,
-            "description": "Inference failed.",
-        },
-        503: {
-            "model": ErrorResponse,
-            "description": "Model checkpoint unavailable.",
-        },
-        422: {
-            "description": "Invalid request fields.",
-        },
+        400: {"model": ErrorResponse},
+        413: {"model": ErrorResponse},
+        415: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
     },
 )
 async def predict(
-    image: UploadFile = File(
-        ...,
-        description="PNG, JPEG, or DICOM chest X-ray.",
-    ),
+    image: UploadFile = File(...),
+    model_name: str = Form(default="resnet50"),
+    explanation_method: str = Form(default="gradcam"),
+    include_overlay: bool = Form(default=True),
 ):
     request_id = str(uuid4())
     start_time = perf_counter()
     max_bytes = settings.max_upload_mb * 1024 * 1024
 
     try:
-        # Enforce the limit before loading an unbounded upload.
+        # 1. Read the upload with a maximum-size guard.
         content = await image.read(max_bytes + 1)
 
         if len(content) > max_bytes:
@@ -101,29 +93,58 @@ async def predict(
                 413,
             )
 
+        # 2. Validate the uploaded file before inference.
         validated = validate_uploaded_image(
             content=content,
             filename=image.filename or "uploaded-image",
             max_bytes=max_bytes,
         )
 
-        result = predict_image(
-            content=content,
-            image_format=validated.image_format,
+        # 3. Check model/explanation compatibility.
+        validate_explanation_compatibility(
+            model_name,
+            explanation_method,
+        )
+
+        # 4. Predict once and retain the model and input tensor.
+        result, model, model_input, original_grayscale = (
+            predict_with_context(
+                content=content,
+                image_format=validated.image_format,
+                model_name=model_name,
+            )
+        )
+
+        # 5. Generate the architecture-specific explanation.
+        heatmap = compute_heatmap(
+            model=model,
+            model_input=model_input,
+            model_name=model_name,
+            explanation_method=explanation_method,
+        )
+
+        # 6. Render the heatmap and optional overlay.
+        images = render_explanation(
+            heatmap=heatmap,
+            original_grayscale=original_grayscale,
+            include_overlay=include_overlay,
         )
 
         elapsed_ms = (perf_counter() - start_time) * 1000
 
         logger.info(
-            "Inference complete: request_id=%s model=%s "
-            "probability=%.4f elapsed_ms=%.2f",
+            "Prediction with explanation complete: "
+            "request_id=%s model=%s method=%s probability=%.4f "
+            "elapsed_ms=%.2f",
             request_id,
             result.model_name,
+            explanation_method,
             result.pneumonia_probability,
             elapsed_ms,
         )
 
-        return InferenceResponse(
+        # 7. Return prediction AND explanation in the response.
+        return PredictionWithExplanationResponse(
             request_id=request_id,
             status="success",
             prediction={
@@ -131,11 +152,24 @@ async def predict(
                 "pneumonia_probability": result.pneumonia_probability,
                 "threshold": result.threshold,
             },
+            
+            explanation={
+                "method": explanation_method.strip().lower(),
+                "original_image_base64": images["original_image_base64"],
+                "heatmap_base64": images["heatmap_base64"],
+                "overlay_base64": images["overlay_base64"],
+                "image_mime_type": "image/png",
+                "width": images["width"],
+                "height": images["height"],
+            },
+
             model={
                 "name": result.model_name,
                 "version": result.model_version,
             },
-            timing={"total_ms": elapsed_ms},
+            timing={
+                "total_ms": elapsed_ms,
+            },
         )
 
     except UploadValidationError as exc:
@@ -148,7 +182,20 @@ async def predict(
 
     except PredictionServiceError as exc:
         logger.warning(
-            "Prediction service error: request_id=%s code=%s",
+            "Prediction error: request_id=%s code=%s",
+            request_id,
+            exc.code,
+        )
+        return error_response(
+            request_id,
+            exc.code,
+            exc.message,
+            exc.status_code,
+        )
+
+    except ExplanationServiceError as exc:
+        logger.warning(
+            "Explanation error: request_id=%s code=%s",
             request_id,
             exc.code,
         )
@@ -167,7 +214,7 @@ async def predict(
         return error_response(
             request_id,
             "PREDICTION_REQUEST_FAILED",
-            "The prediction request could not be completed.",
+            "The prediction and explanation request could not be completed.",
             500,
         )
 

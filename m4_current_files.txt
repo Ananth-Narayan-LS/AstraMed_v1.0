@@ -1,0 +1,1213 @@
+
+
+========== src\explainability\grad_cam.py ==========
+
+
+from __future__ import annotations
+
+import torch
+import torch.nn.functional as F
+
+
+class GradCAM:
+    """
+    Grad-CAM for binary classification models that return one logit.
+
+    Expected model output:
+        [batch_size, 1]
+
+    target_layer:
+        The convolutional layer whose activations are used to
+        construct the Grad-CAM map.
+    """
+
+    def __init__(self, model: torch.nn.Module, target_layer: torch.nn.Module):
+        self.model = model
+        self.target_layer = target_layer
+        self.activations = None
+        self.activation_gradients = None
+
+        self._forward_handle = target_layer.register_forward_hook(
+            self._forward_hook
+        )
+
+    def _forward_hook(self, module, inputs, output):
+        self.activations = output
+
+        # Retain gradients for this intermediate feature map.
+        if output.requires_grad:
+            output.retain_grad()
+
+    def generate(
+        self,
+        input_tensor: torch.Tensor,
+        target: str = "positive",
+    ) -> tuple[torch.Tensor, float]:
+        """
+        Generate a normalized Grad-CAM map.
+
+        Args:
+            input_tensor: Model input, shape [1, 3, H, W].
+            target: "positive" or "negative".
+
+        Returns:
+            cam: Tensor of shape [H, W], values in [0, 1].
+            probability: Model's predicted pneumonia probability.
+        """
+        if input_tensor.ndim != 4 or input_tensor.shape[0] != 1:
+            raise ValueError(
+                "Grad-CAM currently expects one image: [1, 3, H, W]."
+            )
+
+        if target not in {"positive", "negative"}:
+            raise ValueError("target must be 'positive' or 'negative'.")
+
+        self.model.eval()
+        self.model.zero_grad(set_to_none=True)
+        self.activations = None
+
+        # Do NOT use torch.no_grad(): Grad-CAM needs gradients.
+        with torch.enable_grad():
+            model_input = input_tensor.detach().clone().requires_grad_(True)
+            output = self.model(model_input)
+
+            if not isinstance(output, torch.Tensor):
+                raise TypeError("Model must return a Tensor of logits.")
+
+            if output.numel() != 1:
+                raise ValueError(
+                    "Expected one logit for binary classification; "
+                    f"received output shape {tuple(output.shape)}."
+                )
+
+            logit = output.reshape(-1)[0]
+
+            probability = torch.sigmoid(logit.detach()).item()
+
+            # Positive logit explains the pneumonia class.
+            # Negative logit explains the non-pneumonia class.
+            score = logit if target == "positive" else -logit
+            score.backward()
+
+            if self.activations is None:
+                raise RuntimeError("Target layer did not capture activations.")
+
+            gradients = self.activations.grad
+            if gradients is None:
+                raise RuntimeError(
+                    "No gradients captured. Check the target layer."
+                )
+
+            # Average gradients spatially to obtain channel weights.
+            weights = gradients.mean(dim=(2, 3), keepdim=True)
+
+            # Weighted sum across channels, then keep positive evidence.
+            cam = (weights * self.activations).sum(dim=1, keepdim=True)
+            cam = F.relu(cam)
+
+            # Resize CAM to model-input image dimensions.
+            cam = F.interpolate(
+                cam,
+                size=input_tensor.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+
+            cam = cam[0, 0]
+            cam_min = cam.min()
+            cam_max = cam.max()
+
+            # Normalize safely, including the all-zero case.
+            cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
+
+            return cam.detach().cpu(), probability
+
+    def close(self):
+        """Remove the hook when Grad-CAM is no longer needed."""
+        self._forward_handle.remove()
+
+
+========== src\explainability\vit_attention.py ==========
+
+
+from __future__ import annotations
+
+from types import MethodType
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class ViTAttentionCapture:
+    """
+    Capture multi-head attention weights from a ViT model.
+
+    Compatible with torchvision-style ViT models whose transformer
+    blocks contain nn.MultiheadAttention modules.
+
+    Captured attention shape:
+        [batch, heads, tokens, tokens]
+    """
+
+    def __init__(self, model: nn.Module):
+        self.model = model
+        self.layers = []
+        self._original_forwards = []
+        self._closed = False
+
+        attention_modules = [
+            module
+            for module in model.modules()
+            if isinstance(module, nn.MultiheadAttention)
+        ]
+
+        if not attention_modules:
+            raise RuntimeError(
+                "No nn.MultiheadAttention modules found. "
+                "Inspect the ViT implementation before proceeding."
+            )
+
+        for module in attention_modules:
+            original_forward = module.forward
+            self._original_forwards.append((module, original_forward))
+            module._captured_attention = None
+
+            def forward_with_attention(
+                this,
+                query,
+                key,
+                value,
+                *args,
+                _original=original_forward,
+                **kwargs,
+            ):
+                # Override the caller's need_weights=False.
+                kwargs["need_weights"] = True
+                kwargs["average_attn_weights"] = False
+
+                output, weights = _original(
+                    query, key, value, *args, **kwargs
+                )
+
+                this._captured_attention = (
+                    weights.detach() if weights is not None else None
+                )
+
+                # Preserve the tuple interface expected by torchvision ViT.
+                return output, weights
+
+            module.forward = MethodType(forward_with_attention, module)
+            self.layers.append(module)
+
+    def get_attention_maps(self):
+        """Return captured attention matrices in transformer order."""
+        maps = []
+
+        for index, layer in enumerate(self.layers):
+            attention = layer._captured_attention
+
+            if attention is None:
+                raise RuntimeError(
+                    f"No attention weights captured for layer {index}."
+                )
+
+            maps.append(attention)
+
+        return maps
+
+    def close(self):
+        """Restore the original forward methods."""
+        if self._closed:
+            return
+
+        for module, original_forward in self._original_forwards:
+            module.forward = original_forward
+            module._captured_attention = None
+
+        self._closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+
+def cls_attention_map(
+    attention: torch.Tensor,
+    image_size: int = 224,
+) -> torch.Tensor:
+    """
+    Convert the final layer's attention into a spatial patch map.
+
+    Args:
+        attention: [1, heads, tokens, tokens]
+        image_size: desired square output resolution.
+
+    Returns:
+        [image_size, image_size] normalized map in [0, 1].
+
+    Assumes token 0 is CLS and remaining tokens form a square
+    image-patch grid, as in standard torchvision ViT-B/16.
+    """
+    if attention.ndim != 4 or attention.shape[0] != 1:
+        raise ValueError(
+            "Expected attention with shape [1, heads, tokens, tokens]."
+        )
+
+    if attention.shape[-1] != attention.shape[-2]:
+        raise ValueError("Attention matrix must be square.")
+
+    # Average across attention heads.
+    mean_attention = attention.mean(dim=1)[0]
+
+    # CLS token (row 0) attending to all image patches.
+    patch_attention = mean_attention[0, 1:]
+
+    patch_count = patch_attention.numel()
+    grid_size = int(patch_count ** 0.5)
+
+    if grid_size * grid_size != patch_count:
+        raise ValueError(
+            f"{patch_count} patch tokens do not form a square grid. "
+            "This model may use a different token layout."
+        )
+
+    spatial_map = patch_attention.reshape(1, 1, grid_size, grid_size)
+
+    spatial_map = F.interpolate(
+        spatial_map,
+        size=(image_size, image_size),
+        mode="bilinear",
+        align_corners=False,
+    )[0, 0]
+
+    # Normalize for visualization.
+    minimum = spatial_map.min()
+    maximum = spatial_map.max()
+
+    spatial_map = (spatial_map - minimum) / (
+        maximum - minimum + 1e-8
+    )
+
+    return spatial_map.detach().cpu()
+
+
+========== src\api\services\prediction_service.py ==========
+
+import logging
+from dataclasses import dataclass
+from functools import lru_cache
+from io import BytesIO
+from pathlib import Path
+
+import numpy as np
+import pydicom
+import torch
+from PIL import Image
+
+from src.data.advanced_input import AdvancedInputAdapter
+from src.data.preprocessing import preprocess_image
+from src.models.model_factory import build_model
+from src.utils.config import PROJECT_ROOT
+
+
+logger = logging.getLogger(__name__)
+
+EXPERIMENTS_DIR = PROJECT_ROOT / "outputs" / "experiments"
+
+CHECKPOINT_PATHS = {
+    "resnet50": (
+        EXPERIMENTS_DIR
+        / "resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42"
+        / "checkpoints"
+        / "best_model.pth"
+    ),
+}
+
+PREDICTION_THRESHOLD = 0.5
+
+SUPPORTED_MODELS = {"resnet50", "vit_b16"}
+
+
+class PredictionServiceError(Exception):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = 500,
+    ):
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        super().__init__(message)
+
+
+@dataclass(frozen=True)
+class PredictionOutput:
+    pneumonia_probability: float
+    predicted_class: str
+    threshold: float
+    model_name: str
+    model_version: str
+
+
+def _resolve_checkpoint(model_name: str) -> Path:
+    """Resolve a local checkpoint without substituting pretrained weights."""
+    if model_name == "resnet50":
+        checkpoint_path = CHECKPOINT_PATHS["resnet50"]
+
+    elif model_name == "vit_b16":
+        matches = sorted(
+            EXPERIMENTS_DIR.glob(
+                "vit_b16*/checkpoints/best_model.pth"
+            )
+        )
+
+        if not matches:
+            raise PredictionServiceError(
+                "CHECKPOINT_NOT_FOUND",
+                "No local ViT-B/16 best_model.pth checkpoint was found "
+                "under outputs/experiments/vit_b16*/checkpoints/.",
+                503,
+            )
+
+        if len(matches) > 1:
+            raise PredictionServiceError(
+                "AMBIGUOUS_CHECKPOINT",
+                "Multiple ViT-B/16 checkpoints were found. Configure "
+                "the intended experiment checkpoint explicitly.",
+                500,
+            )
+
+        checkpoint_path = matches[0]
+
+    else:
+        raise PredictionServiceError(
+            "UNSUPPORTED_MODEL",
+            f"Model {model_name!r} is not supported.",
+            422,
+        )
+
+    if not checkpoint_path.is_file():
+        raise PredictionServiceError(
+            "CHECKPOINT_NOT_FOUND",
+            f"The local checkpoint for {model_name} was not found: "
+            f"{checkpoint_path}",
+            503,
+        )
+
+    return checkpoint_path
+
+
+@lru_cache(maxsize=2)
+def _load_model_bundle(model_name: str):
+    """Load and cache a model, its adapter, device, and checkpoint version."""
+    model_name = model_name.lower().strip()
+
+    if model_name not in SUPPORTED_MODELS:
+        raise PredictionServiceError(
+            "UNSUPPORTED_MODEL",
+            f"Model {model_name!r} is not supported.",
+            422,
+        )
+
+    checkpoint_path = _resolve_checkpoint(model_name)
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+    try:
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location=device,
+            weights_only=True,
+        )
+
+        if (
+            not isinstance(checkpoint, dict)
+            or "model_state_dict" not in checkpoint
+        ):
+            raise PredictionServiceError(
+                "INVALID_CHECKPOINT",
+                "The checkpoint has no model_state_dict.",
+                500,
+            )
+
+        # Build the requested architecture without downloading pretrained weights.
+        model = build_model(model_name, pretrained=False)
+
+        model.load_state_dict(
+            checkpoint["model_state_dict"],
+            strict=True,
+        )
+
+        model.to(device)
+        model.eval()
+
+        adapter = AdvancedInputAdapter(
+            image_size=224,
+            use_imagenet_normalization=True,
+        )
+        adapter.to(device)
+        adapter.eval()
+
+        epoch = checkpoint.get("epoch", "unknown")
+        model_version = f"checkpoint-epoch-{epoch}"
+
+        logger.info(
+            "Loaded model=%s device=%s epoch=%s checkpoint=%s",
+            model_name,
+            device,
+            epoch,
+            checkpoint_path,
+        )
+
+        return model, adapter, device, model_version
+
+    except PredictionServiceError:
+        raise
+
+    except Exception as exc:
+        logger.exception(
+            "Could not load the %s prediction checkpoint.",
+            model_name,
+        )
+        raise PredictionServiceError(
+            "MODEL_LOAD_FAILED",
+            f"The local {model_name} checkpoint could not be loaded. "
+            "Check that its architecture matches the model factory.",
+            503,
+        ) from exc
+
+
+def _decode_uploaded_image(
+    content: bytes,
+    image_format: str,
+) -> np.ndarray:
+    """Decode an already-validated upload into a 2D grayscale array."""
+    try:
+        if image_format == "DICOM":
+            dataset = pydicom.dcmread(
+                BytesIO(content),
+                force=False,
+            )
+            image = dataset.pixel_array.astype(np.float32)
+
+        elif image_format in {"PNG", "JPEG"}:
+            with Image.open(BytesIO(content)) as source:
+                image = np.asarray(source.convert("L")).copy()
+
+        else:
+            raise PredictionServiceError(
+                "UNSUPPORTED_IMAGE_FORMAT",
+                "The image format is not supported for inference.",
+                415,
+            )
+
+        if image.ndim != 2:
+            raise PredictionServiceError(
+                "INVALID_IMAGE_DIMENSIONS",
+                "Inference requires a single grayscale image.",
+                400,
+            )
+
+        if image.size == 0 or not np.isfinite(image).all():
+            raise PredictionServiceError(
+                "INVALID_IMAGE_PIXELS",
+                "The image contains invalid pixel data.",
+                400,
+            )
+
+        return image
+
+    except PredictionServiceError:
+        raise
+
+    except Exception as exc:
+        logger.warning("Uploaded image could not be decoded.")
+        raise PredictionServiceError(
+            "IMAGE_DECODE_FAILED",
+            "The image pixels could not be decoded.",
+            400,
+        ) from exc
+
+
+def _prepare_model_input(
+    image: np.ndarray,
+    adapter: AdvancedInputAdapter,
+    device: torch.device,
+):
+    """
+    Return the original grayscale image and model input.
+
+    Model input shape: [1, 3, 224, 224].
+    """
+    processed = preprocess_image(
+        image,
+        target_size=(512, 512),
+    )
+
+    input_tensor = torch.from_numpy(
+        np.asarray(processed, dtype=np.float32)
+    ).float().unsqueeze(0).unsqueeze(0)
+
+    input_tensor = input_tensor.to(device)
+
+    with torch.no_grad():
+        model_input = adapter(input_tensor)
+
+    if tuple(model_input.shape) != (1, 3, 224, 224):
+        raise PredictionServiceError(
+            "INVALID_MODEL_INPUT_SHAPE",
+            f"Expected model input [1, 3, 224, 224], got "
+            f"{tuple(model_input.shape)}.",
+            500,
+        )
+
+    return image.copy(), model_input
+
+
+def predict_with_context(
+    content: bytes,
+    image_format: str,
+    model_name: str = "resnet50",
+):
+    """
+    Run inference and return context for explanation generation.
+
+    Returns:
+        (PredictionOutput, model, model_input, original_grayscale)
+
+    The model_input is the same tensor used for the prediction.
+    """
+    model_name = model_name.lower().strip()
+
+    model, adapter, device, model_version = _load_model_bundle(
+        model_name
+    )
+
+    image = _decode_uploaded_image(
+        content=content,
+        image_format=image_format,
+    )
+
+    original_grayscale, model_input = _prepare_model_input(
+        image=image,
+        adapter=adapter,
+        device=device,
+    )
+
+    try:
+        with torch.inference_mode():
+            logits = model(model_input)
+
+            # Both supported classifiers must return logits.
+            probability = torch.sigmoid(logits).reshape(-1)[0].item()
+
+    except Exception as exc:
+        logger.exception(
+            "Local %s inference failed.",
+            model_name,
+        )
+        raise PredictionServiceError(
+            "INFERENCE_FAILED",
+            "The model could not complete inference.",
+            500,
+        ) from exc
+
+    predicted_class = (
+        "pneumonia"
+        if probability >= PREDICTION_THRESHOLD
+        else "normal"
+    )
+
+    result = PredictionOutput(
+        pneumonia_probability=float(probability),
+        predicted_class=predicted_class,
+        threshold=PREDICTION_THRESHOLD,
+        model_name=model_name,
+        model_version=model_version,
+    )
+
+    return result, model, model_input, original_grayscale
+
+
+def predict_image(
+    content: bytes,
+    image_format: str,
+) -> PredictionOutput:
+    """Backward-compatible M3 inference interface."""
+    result, _, _, _ = predict_with_context(
+        content=content,
+        image_format=image_format,
+        model_name="resnet50",
+    )
+    return result
+
+
+========== src\api\routes\predict.py ==========
+
+
+import logging
+from time import perf_counter
+from uuid import uuid4
+
+from fastapi import APIRouter, File, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+
+from src.api.config import settings
+from src.api.schemas.common import ErrorResponse
+from src.api.schemas.response import InferenceResponse
+from src.api.services.image_validation import (
+    UploadValidationError,
+    validate_uploaded_image,
+)
+from src.api.services.prediction_service import (
+    PredictionServiceError,
+    predict_image,
+)
+
+from fastapi import Form
+from src.api.services.explanation_compatibility import (
+    validate_explanation_compatibility,
+)
+from src.api.services.explanation_services import (
+    ExplanationServiceError,
+    compute_heatmap,
+    render_explanation,
+)
+from src.api.services.prediction_service import (
+    PredictionServiceError,
+    predict_with_context,
+)
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["Prediction"])
+
+
+def error_response(
+    request_id: str,
+    code: str,
+    message: str,
+    status_code: int,
+) -> JSONResponse:
+    body = ErrorResponse(
+        request_id=request_id,
+        error={
+            "code": code,
+            "message": message,
+        },
+    )
+
+    return JSONResponse(
+        status_code=status_code,
+        content=jsonable_encoder(body.model_dump()),
+    )
+
+
+@router.post(
+    "/predict",
+    summary="Predict pneumonia from a chest X-ray",
+    description=(
+        "Validates an uploaded PNG, JPEG, or DICOM image and runs "
+        "the local ResNet-50 checkpoint. Research prototype; "
+        "not for clinical diagnosis."
+    ),
+    response_model=InferenceResponse,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid or corrupted image.",
+        },
+        413: {
+            "model": ErrorResponse,
+            "description": "Upload exceeds the configured size limit.",
+        },
+        415: {
+            "model": ErrorResponse,
+            "description": "Unsupported image format.",
+        },
+        500: {
+            "model": ErrorResponse,
+            "description": "Inference failed.",
+        },
+        503: {
+            "model": ErrorResponse,
+            "description": "Model checkpoint unavailable.",
+        },
+        422: {
+            "description": "Invalid request fields.",
+        },
+    },
+)
+async def predict(
+    image: UploadFile = File(...),
+    model_name: str = Form(default="resnet50"),
+    explanation_method: str = Form(default="gradcam"),
+    include_overlay: bool = Form(default=True),
+):
+    request_id = str(uuid4())
+    start_time = perf_counter()
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+
+    try:
+        # Enforce the limit before loading an unbounded upload.
+        content = await image.read(max_bytes + 1)
+
+        if len(content) > max_bytes:
+            return error_response(
+                request_id,
+                "FILE_TOO_LARGE",
+                f"File exceeds the {settings.max_upload_mb} MB limit.",
+                413,
+            )
+
+        validated = validate_uploaded_image(
+            content=content,
+            filename=image.filename or "uploaded-image",
+            max_bytes=max_bytes,
+        )
+
+        # 1. Check that the requested explanation matches the model.
+        validate_explanation_compatibility(
+            model_name,
+            explanation_method,
+        )
+
+        # 2. Run prediction and retain the model/input for explanation.
+        result, model, model_input, original_grayscale = predict_with_context(
+            content=content,
+            image_format=validated.image_format,
+            model_name=model_name,
+        )
+
+        # 3. Generate the architecture-specific heatmap.
+        heatmap = compute_heatmap(
+            model=model,
+            model_input=model_input,
+            model_name=model_name,
+            explanation_method=explanation_method,
+        )
+
+        # 4. Render the heatmap and optional overlay.
+        images = render_explanation(
+            heatmap=heatmap,
+            original_grayscale=original_grayscale,
+            include_overlay=include_overlay,
+        )
+
+        result = predict_image(
+            content=content,
+            image_format=validated.image_format,
+        )
+
+        elapsed_ms = (perf_counter() - start_time) * 1000
+
+        logger.info(
+            "Inference complete: request_id=%s model=%s "
+            "probability=%.4f elapsed_ms=%.2f",
+            request_id,
+            result.model_name,
+            result.pneumonia_probability,
+            elapsed_ms,
+        )
+
+        return InferenceResponse(
+            request_id=request_id,
+            status="success",
+            prediction={
+                "predicted_class": result.predicted_class,
+                "pneumonia_probability": result.pneumonia_probability,
+                "threshold": result.threshold,
+            },
+            model={
+                "name": result.model_name,
+                "version": result.model_version,
+            },
+            timing={"total_ms": elapsed_ms},
+        )
+
+    except UploadValidationError as exc:
+        return error_response(
+            request_id,
+            exc.code,
+            exc.message,
+            exc.status_code,
+        )
+
+    except PredictionServiceError as exc:
+        logger.warning(
+            "Prediction service error: request_id=%s code=%s",
+            request_id,
+            exc.code,
+        )
+        return error_response(
+            request_id,
+            exc.code,
+            exc.message,
+            exc.status_code,
+        )
+
+    except Exception:
+        logger.exception(
+            "Unexpected prediction request failure: request_id=%s",
+            request_id,
+        )
+        return error_response(
+            request_id,
+            "PREDICTION_REQUEST_FAILED",
+            "The prediction request could not be completed.",
+            500,
+        )
+
+    finally:
+        await image.close()
+
+
+
+========== src\api\schemas\response.py ==========
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    app_name: str
+    version: str
+
+
+class PredictionResult(BaseModel):
+    predicted_class: Literal["pneumonia", "normal"]
+    pneumonia_probability: float = Field(ge=0.0, le=1.0)
+    threshold: float = Field(ge=0.0, le=1.0)
+
+
+class ExplanationResult(BaseModel):
+    method: Literal["gradcam", "attention"]
+    heatmap_base64: str | None = None
+    overlay_base64: str | None = None
+    image_mime_type: Literal["image/png"] = "image/png"
+
+class PredictionWithExplanationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    status: Literal["success"] = "success"
+    prediction: PredictionResult
+    explanation: ExplanationResult
+    model: ModelMetadata
+    timing: TimingMetadata
+
+
+class ModelMetadata(BaseModel):
+    name: str
+    version: str
+
+
+class TimingMetadata(BaseModel):
+    total_ms: float = Field(ge=0.0)
+
+
+class PredictionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    status: Literal["success"] = "success"
+    prediction: PredictionResult
+    explanation: ExplanationResult
+    model: ModelMetadata
+    timing: TimingMetadata
+
+
+class UploadValidationResponse(BaseModel):
+    status: Literal["success"] = "success"
+    request_id: str
+    message: str
+    image_format: Literal["PNG", "JPEG", "DICOM"]
+    size_bytes: int = Field(gt=0)
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+
+
+class InferenceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    status: Literal["success"] = "success"
+    prediction: PredictionResult
+    model: ModelMetadata
+    timing: TimingMetadata
+
+
+========== src\api\schemas\request.py ==========
+
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class PredictionOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_name: Literal["resnet50", "vit_b16"] = Field(
+        default="resnet50",
+        description="Model architecture used for inference.",
+    )
+
+    explanation_method: Literal["gradcam", "attention"] = Field(
+        default="gradcam",
+        description="Explanation method requested by the client.",
+    )
+
+    include_overlay: bool = Field(
+        default=True,
+        description="Whether to return an explanation overlay.",
+    )
+
+
+========== src\models\model_factory.py ==========
+
+
+"""
+Model factory for AstraMed.
+
+Creates binary pneumonia-classification models using
+TorchVision architectures.
+
+Advanced models return raw logits with shape [B, 1].
+Use BCEWithLogitsLoss during training.
+"""
+
+from torch import nn
+from torchvision import models
+
+from src.models.baseline_cnn import BaselineCNN
+
+
+def build_model(
+    model_name: str,
+    pretrained: bool = True,
+) -> nn.Module:
+    """
+    Build a model for binary pneumonia classification.
+
+    Supported advanced architectures:
+        - resnet50
+        - densenet121
+        - efficientnet_b0
+        - convnext_tiny
+        - vit_b16
+
+    Parameters
+    ----------
+    model_name : str
+        Architecture name.
+    pretrained : bool
+        Whether to load ImageNet-pretrained weights.
+
+    Returns
+    -------
+    nn.Module
+        Model with a single binary-classification output.
+        Advanced models return raw logits, not probabilities.
+    """
+
+    model_name = model_name.lower().strip()
+
+    # Keep the Sprint 4 baseline available without changing it.
+    if model_name == "baseline_cnn":
+        if pretrained:
+            raise ValueError(
+                "BaselineCNN does not support ImageNet pretrained weights."
+            )
+        return BaselineCNN()
+
+    if model_name == "resnet50":
+        weights = (
+            models.ResNet50_Weights.DEFAULT
+            if pretrained else None
+        )
+        model = models.resnet50(weights=weights)
+        model.fc = nn.Linear(model.fc.in_features, 1)
+
+    elif model_name == "densenet121":
+        weights = (
+            models.DenseNet121_Weights.DEFAULT
+            if pretrained else None
+        )
+        model = models.densenet121(weights=weights)
+        model.classifier = nn.Linear(
+            model.classifier.in_features, 1
+        )
+
+    elif model_name == "efficientnet_b0":
+        weights = (
+            models.EfficientNet_B0_Weights.DEFAULT
+            if pretrained else None
+        )
+        model = models.efficientnet_b0(weights=weights)
+        model.classifier[1] = nn.Linear(
+            model.classifier[1].in_features, 1
+        )
+
+    elif model_name == "convnext_tiny":
+        weights = (
+            models.ConvNeXt_Tiny_Weights.DEFAULT
+            if pretrained else None
+        )
+        model = models.convnext_tiny(weights=weights)
+        model.classifier[2] = nn.Linear(
+            model.classifier[2].in_features, 1
+        )
+
+    elif model_name == "vit_b16":
+        weights = (
+            models.ViT_B_16_Weights.DEFAULT
+            if pretrained else None
+        )
+        model = models.vit_b_16(weights=weights)
+        model.heads.head = nn.Linear(
+            model.heads.head.in_features, 1
+        )
+
+    else:
+        supported = [
+            "baseline_cnn",
+            "resnet50",
+            "densenet121",
+            "efficientnet_b0",
+            "convnext_tiny",
+            "vit_b16",
+        ]
+        raise ValueError(
+            f"Unsupported model: {model_name!r}. "
+            f"Supported models: {', '.join(supported)}"
+        )
+
+    return model
+
+
+========== src\data\advanced_input.py ==========
+
+"""
+Advanced model input pipeline for AstraMed.
+
+This module adapts the existing grayscale RSNA dataset output
+for ImageNet-pretrained models without modifying the baseline
+dataset implementation.
+
+[B,1,H,W]
+   ↓
+resize
+   ↓
+channel replication
+   ↓
+normalization
+   ↓
+[B,3,224,224]
+
+
+"""
+
+import torch
+import torch.nn as nn
+import torchvision.transforms as transforms
+
+
+class AdvancedInputAdapter(nn.Module):
+    """
+    Adapt grayscale X-ray tensors for ImageNet-pretrained models.
+
+    Input:
+        [B, 1, H, W]
+
+    Output:
+        [B, 3, image_size, image_size]
+    """
+
+    IMAGENET_MEAN = [
+        0.485,
+        0.456,
+        0.406,
+    ]
+
+    IMAGENET_STD = [
+        0.229,
+        0.224,
+        0.225,
+    ]
+
+    def __init__(
+        self,
+        image_size: int = 224,
+        use_imagenet_normalization: bool = True,
+    ):
+        super().__init__()
+
+        if image_size <= 0:
+            raise ValueError(
+                "image_size must be greater than 0."
+            )
+
+        self.image_size = image_size
+        self.use_imagenet_normalization = (
+            use_imagenet_normalization
+        )
+
+        self.resize = transforms.Resize(
+            (image_size, image_size)
+        )
+
+        self.normalize = transforms.Normalize(
+            mean=self.IMAGENET_MEAN,
+            std=self.IMAGENET_STD,
+        )
+
+    def forward(
+        self,
+        images: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Convert grayscale images to 3-channel input.
+
+        Parameters
+        ----------
+        images : torch.Tensor
+            Tensor with shape [B, 1, H, W].
+
+        Returns
+        -------
+        torch.Tensor
+            Tensor with shape
+            [B, 3, image_size, image_size].
+        """
+
+        if images.ndim != 4:
+            raise ValueError(
+                "Expected input with shape [B, C, H, W], "
+                f"got {tuple(images.shape)}."
+            )
+
+        if images.shape[1] != 1:
+            raise ValueError(
+                "Expected grayscale input with 1 channel, "
+                f"got {images.shape[1]} channels."
+            )
+
+        # Step 1: Resize.
+        images = self.resize(images)
+
+        # Step 2: Convert grayscale → 3 channels.
+        images = images.repeat(1, 3, 1, 1)
+
+        # Step 3: Apply ImageNet normalization.
+        if self.use_imagenet_normalization:
+            images = self.normalize(images)
+
+        return images

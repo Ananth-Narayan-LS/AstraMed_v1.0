@@ -1,3 +1,4 @@
+
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
@@ -9,6 +10,7 @@ import pydicom
 import torch
 from PIL import Image
 
+from src.api.config import settings
 from src.data.advanced_input import AdvancedInputAdapter
 from src.data.preprocessing import preprocess_image
 from src.models.model_factory import build_model
@@ -28,9 +30,16 @@ CHECKPOINT_PATHS = {
     ),
 }
 
-PREDICTION_THRESHOLD = 0.5
-
 SUPPORTED_MODELS = {"resnet50", "vit_b16"}
+
+# Preserve the existing behavior if these settings are not yet defined
+# in src/api/config.py.
+PREDICTION_THRESHOLD = float(
+    getattr(settings, "prediction_threshold", 0.5)
+)
+
+if not 0.0 <= PREDICTION_THRESHOLD <= 1.0:
+    raise ValueError("prediction_threshold must be between 0 and 1.")
 
 
 class PredictionServiceError(Exception):
@@ -70,16 +79,19 @@ def _resolve_checkpoint(model_name: str) -> Path:
         if not matches:
             raise PredictionServiceError(
                 "CHECKPOINT_NOT_FOUND",
-                "No local ViT-B/16 best_model.pth checkpoint was found "
-                "under outputs/experiments/vit_b16*/checkpoints/.",
+                "No local ViT-B/16 checkpoint is configured or available.",
                 503,
             )
 
         if len(matches) > 1:
+            logger.error(
+                "Multiple ViT-B/16 checkpoints were found. "
+                "Configure the intended experiment explicitly."
+            )
             raise PredictionServiceError(
                 "AMBIGUOUS_CHECKPOINT",
-                "Multiple ViT-B/16 checkpoints were found. Configure "
-                "the intended experiment checkpoint explicitly.",
+                "Multiple ViT-B/16 checkpoints were found. "
+                "Configure the intended experiment checkpoint.",
                 500,
             )
 
@@ -93,10 +105,13 @@ def _resolve_checkpoint(model_name: str) -> Path:
         )
 
     if not checkpoint_path.is_file():
+        logger.warning(
+            "Checkpoint unavailable for model=%s.",
+            model_name,
+        )
         raise PredictionServiceError(
             "CHECKPOINT_NOT_FOUND",
-            f"The local checkpoint for {model_name} was not found: "
-            f"{checkpoint_path}",
+            f"The local checkpoint for {model_name} was not found.",
             503,
         )
 
@@ -105,7 +120,7 @@ def _resolve_checkpoint(model_name: str) -> Path:
 
 @lru_cache(maxsize=2)
 def _load_model_bundle(model_name: str):
-    """Load and cache a model, its adapter, device, and checkpoint version."""
+    """Load and cache a model, adapter, device, and checkpoint version."""
     model_name = model_name.lower().strip()
 
     if model_name not in SUPPORTED_MODELS:
@@ -116,6 +131,7 @@ def _load_model_bundle(model_name: str):
         )
 
     checkpoint_path = _resolve_checkpoint(model_name)
+
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
     )
@@ -137,7 +153,7 @@ def _load_model_bundle(model_name: str):
                 500,
             )
 
-        # Build the requested architecture without downloading pretrained weights.
+        # Do not download pretrained weights during API inference.
         model = build_model(model_name, pretrained=False)
 
         model.load_state_dict(
@@ -159,11 +175,10 @@ def _load_model_bundle(model_name: str):
         model_version = f"checkpoint-epoch-{epoch}"
 
         logger.info(
-            "Loaded model=%s device=%s epoch=%s checkpoint=%s",
+            "Loaded model=%s device=%s epoch=%s",
             model_name,
             device,
             epoch,
-            checkpoint_path,
         )
 
         return model, adapter, device, model_version
@@ -257,7 +272,7 @@ def _prepare_model_input(
 
     input_tensor = input_tensor.to(device)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         model_input = adapter(input_tensor)
 
     if tuple(model_input.shape) != (1, 3, 224, 224):
@@ -274,7 +289,7 @@ def _prepare_model_input(
 def predict_with_context(
     content: bytes,
     image_format: str,
-    model_name: str = "resnet50",
+    model_name: str | None = None,
 ):
     """
     Run inference and return context for explanation generation.
@@ -284,6 +299,11 @@ def predict_with_context(
 
     The model_input is the same tensor used for the prediction.
     """
+    if model_name is None or not model_name.strip():
+        model_name = str(
+            getattr(settings, "default_model", "resnet50")
+        )
+
     model_name = model_name.lower().strip()
 
     model, adapter, device, model_version = _load_model_bundle(
@@ -344,6 +364,6 @@ def predict_image(
     result, _, _, _ = predict_with_context(
         content=content,
         image_format=image_format,
-        model_name="resnet50",
+        model_name=None,
     )
     return result

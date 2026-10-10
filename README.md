@@ -1,1 +1,76 @@
-this is a readme file
+## AstraMed API — Local Setup
+
+### Requirements
+
+- Python version compatible with the project's installed PyTorch and other dependencies.
+- Git.
+- A trained AstraMed model checkpoint.
+- Optional NVIDIA GPU with a compatible PyTorch CUDA installation.
+
+### 1. Clone the repository
+
+```powershell
+git clone https://github.com/Ananth-Narayan-LS/AstraMed_v1.0.git
+cd AstraMed_v1.0
+```
+
+### 2. Create and activate a virtual environment
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+```
+
+If PowerShell blocks activation, use the activation instructions for your system rather than changing system-wide security settings unnecessarily.
+
+### 3. Install dependencies
+
+Install the dependencies listed in the repository's dependency file. Install the appropriate PyTorch build for your hardware and operating system.
+
+### 4. Configure the API
+
+Copy `.env.example` to `.env` and edit the values if needed.
+
+```powershell
+Copy-Item .env.example .env
+```
+
+The `.env` file contains local configuration and should not be committed.
+
+### 5. Place model checkpoints
+
+The API expects trained checkpoints under:
+
+```text
+outputs/experiments/<experiment_name>/checkpoints/best_model.pth
+```
+
+The configured ResNet-50 checkpoint path is documented in `src/api/services/prediction_service.py`. Checkpoint files are model artifacts and may not be included in a fresh Git clone; obtain them from the project's approved artifact location.
+
+### 6. Start the API
+
+From the repository root:
+
+```powershell
+python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+```
+
+Open the interactive API documentation at:
+
+http://127.0.0.1:8000/docs
+
+### 7. Run backend tests
+
+```powershell
+python scripts/test_api_foundation.py
+python scripts/test_api_explanations.py
+python scripts/test_api_integration.py --image "data\raw\rsna-pneumonia-detection-challenge\stage_2_train_images\0a0f91dc-6015-4342-b809-d19610854a21.dcm"
+python scripts/test_api_reliability.py
+```
+
+The integration test requires the specified DICOM file and a compatible trained checkpoint.
+
+### Scope and limitations
+
+AstraMed is a research and educational project. Model predictions and heatmaps are not clinically validated and must not be used as a substitute for professional medical assessment. Screening metrics from small experiments are not evidence of clinical readiness.

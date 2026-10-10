@@ -45,7 +45,8 @@ def test_root_and_health():
     assert health.json()["status"] == "ok"
 
 
-def test_openapi_documents_m2_response():
+
+def test_openapi_documents_prediction_response():
     response = client.get("/openapi.json")
 
     assert response.status_code == 200
@@ -58,8 +59,22 @@ def test_openapi_documents_m2_response():
     ]["schema"]
 
     assert success_schema["$ref"] == (
-        "#/components/schemas/InferenceResponse"
+        "#/components/schemas/PredictionWithExplanationResponse"
     )
+
+    documented_responses = predict_spec["responses"]
+
+    for status_code in ("400", "413", "415", "422", "500", "503"):
+        assert status_code in documented_responses, (
+            f"HTTP {status_code} is missing from the documented responses."
+        )
+
+    error_schema = documented_responses["400"]["content"][
+        "application/json"
+    ]["schema"]
+
+    assert error_schema["$ref"] == "#/components/schemas/ErrorResponse"
+
 
 
 def test_valid_png_upload():
@@ -161,15 +176,68 @@ def test_service_rejects_oversized_content():
         raise AssertionError("Oversized content was not rejected")
 
 
+def test_request_id_is_returned_in_header_and_body():
+    supplied_id = "astramed-m8-test-001"
+
+    response = client.get(
+        "/api/v1/health",
+        headers={"X-Request-ID": supplied_id},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == supplied_id
+
+
+def test_prediction_request_id_matches_response_header():
+    response = client.post(
+        "/api/v1/predict",
+        files={
+            "image": (
+                "chest_xray.png",
+                make_png(),
+                "image/png",
+            )
+        },
+        headers={"X-Request-ID": "astramed-predict-test-001"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == (
+        "astramed-predict-test-001"
+    )
+    assert response.json()["request_id"] == (
+        response.headers["X-Request-ID"]
+    )
+
+
+def test_image_pixel_limit_is_enforced():
+    from src.api.config import MAX_IMAGE_PIXELS
+    from src.api.services.image_validation import (
+        UploadValidationError,
+        _validate_dimensions,
+    )
+
+    try:
+        _validate_dimensions(MAX_IMAGE_PIXELS + 1, 1)
+    except UploadValidationError as exc:
+        assert exc.status_code == 413
+        assert exc.code == "IMAGE_TOO_LARGE_TO_DECODE"
+    else:
+        raise AssertionError("Oversized image dimensions were accepted")
+
+
 def run_tests():
     tests = [
         test_root_and_health,
-        test_openapi_documents_m2_response,
+        test_openapi_documents_prediction_response,
         test_valid_png_upload,
         test_corrupted_upload_is_rejected,
         test_unsupported_image_format_is_rejected,
         test_empty_upload_is_rejected,
         test_service_rejects_oversized_content,
+        test_request_id_is_returned_in_header_and_body,
+        test_prediction_request_id_matches_response_header,
+        test_image_pixel_limit_is_enforced
     ]
 
     failures = []

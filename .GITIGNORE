@@ -53,3 +53,14 @@ mlruns/
 # ==========================
 .DS_Store
 Thumbs.db
+
+# Local environment settings
+.env
+
+# Python environments and cache
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local logs
+*.log

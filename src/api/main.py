@@ -4,8 +4,11 @@ from src.api.config import settings
 from src.api.logging_config import configure_logging
 from src.api.routes import health, predict
 
+from src.api.middleware import RequestIDMiddleware
 
 configure_logging()
+
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -19,6 +22,8 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+app.add_middleware(RequestIDMiddleware)
 
 app.include_router(
     health.router,
@@ -39,3 +44,7 @@ def root():
         "docs": "/docs",
         "health": f"{settings.api_prefix}/health",
     }
+
+from src.api.middleware import RequestIDMiddleware
+
+app.add_middleware(RequestIDMiddleware)

@@ -1,6 +1,9 @@
+
 import logging
 from time import perf_counter
 from uuid import uuid4
+
+from fastapi import APIRouter, File, Form, Request, UploadFile
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -39,6 +42,7 @@ def error_response(
     message: str,
     status_code: int,
 ) -> JSONResponse:
+    """Return the API's standard error response."""
     body = ErrorResponse(
         request_id=request_id,
         error={
@@ -51,6 +55,21 @@ def error_response(
         status_code=status_code,
         content=jsonable_encoder(body.model_dump()),
     )
+
+
+def _configured_default_model() -> str:
+    """Read the configured default model with a safe fallback."""
+    return str(getattr(settings, "default_model", "resnet50")).lower().strip()
+
+
+def _configured_max_upload_bytes() -> int:
+    """Convert the configured upload limit from MB to bytes."""
+    max_mb = int(settings.max_upload_mb)
+
+    if max_mb <= 0:
+        raise ValueError("The upload size limit must be positive.")
+
+    return max_mb * 1024 * 1024
 
 
 @router.post(
@@ -72,24 +91,39 @@ def error_response(
     },
 )
 async def predict(
+    request: Request,
     image: UploadFile = File(...),
-    model_name: str = Form(default="resnet50"),
+    model_name: str = Form(default=None),
     explanation_method: str = Form(default="gradcam"),
     include_overlay: bool = Form(default=True),
 ):
-    request_id = str(uuid4())
+    request_id = getattr(
+    request.state,
+    "request_id",
+    str(uuid4()),
+    )
     start_time = perf_counter()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
 
     try:
-        # 1. Read the upload with a maximum-size guard.
+        max_bytes = _configured_max_upload_bytes()
+        max_mb = int(settings.max_upload_mb)
+
+        # Use the configured model unless the caller supplies one.
+        selected_model = (
+            model_name
+            if model_name is not None and model_name.strip()
+            else _configured_default_model()
+        )
+        selected_model = selected_model.lower().strip()
+
+        # 1. Read only up to one byte beyond the configured limit.
         content = await image.read(max_bytes + 1)
 
         if len(content) > max_bytes:
             return error_response(
                 request_id,
                 "FILE_TOO_LARGE",
-                f"File exceeds the {settings.max_upload_mb} MB limit.",
+                f"File exceeds the {max_mb} MB limit.",
                 413,
             )
 
@@ -102,7 +136,7 @@ async def predict(
 
         # 3. Check model/explanation compatibility.
         validate_explanation_compatibility(
-            model_name,
+            selected_model,
             explanation_method,
         )
 
@@ -111,7 +145,7 @@ async def predict(
             predict_with_context(
                 content=content,
                 image_format=validated.image_format,
-                model_name=model_name,
+                model_name=selected_model,
             )
         )
 
@@ -119,7 +153,7 @@ async def predict(
         heatmap = compute_heatmap(
             model=model,
             model_input=model_input,
-            model_name=model_name,
+            model_name=selected_model,
             explanation_method=explanation_method,
         )
 
@@ -143,7 +177,7 @@ async def predict(
             elapsed_ms,
         )
 
-        # 7. Return prediction AND explanation in the response.
+        # 7. Return prediction AND explanation.
         return PredictionWithExplanationResponse(
             request_id=request_id,
             status="success",
@@ -152,7 +186,6 @@ async def predict(
                 "pneumonia_probability": result.pneumonia_probability,
                 "threshold": result.threshold,
             },
-            
             explanation={
                 "method": explanation_method.strip().lower(),
                 "original_image_base64": images["original_image_base64"],
@@ -162,7 +195,6 @@ async def predict(
                 "width": images["width"],
                 "height": images["height"],
             },
-
             model={
                 "name": result.model_name,
                 "version": result.model_version,
@@ -207,6 +239,7 @@ async def predict(
         )
 
     except Exception:
+        # Detailed traceback stays in server logs, not the API response.
         logger.exception(
             "Unexpected prediction request failure: request_id=%s",
             request_id,
@@ -219,4 +252,5 @@ async def predict(
         )
 
     finally:
+        # Close the upload even when validation or inference fails.
         await image.close()

@@ -6,6 +6,8 @@ from PIL import Image, UnidentifiedImageError
 import pydicom
 from pydicom.errors import InvalidDicomError
 
+from src.api.config import MAX_IMAGE_PIXELS
+
 
 @dataclass(frozen=True)
 class ValidatedImage:
@@ -25,16 +27,33 @@ class UploadValidationError(Exception):
         super().__init__(message)
 
 
+def _validate_dimensions(width: int, height: int) -> None:
+    """Reject invalid dimensions and images that exceed the pixel limit."""
+    if width <= 0 or height <= 0:
+        raise UploadValidationError(
+            "INVALID_IMAGE_DIMENSIONS",
+            "The image dimensions are invalid.",
+            400,
+        )
+
+    if width * height > MAX_IMAGE_PIXELS:
+        raise UploadValidationError(
+            "IMAGE_TOO_LARGE_TO_DECODE",
+            "The image dimensions exceed the configured pixel limit.",
+            413,
+        )
+
+
 def validate_uploaded_image(
     content: bytes,
     filename: str,
     max_bytes: int,
 ) -> ValidatedImage:
     """
-    Validate uploaded PNG, JPEG, or DICOM content.
+    Validate PNG, JPEG, or DICOM content.
 
-    The caller must enforce the byte limit while reading the upload.
-    This function performs content-level validation.
+    The caller should enforce the byte limit while reading the upload.
+    This function also checks the supplied content length independently.
     """
     if not content:
         raise UploadValidationError(
@@ -43,6 +62,9 @@ def validate_uploaded_image(
             400,
         )
 
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be positive.")
+
     if len(content) > max_bytes:
         raise UploadValidationError(
             "FILE_TOO_LARGE",
@@ -50,7 +72,7 @@ def validate_uploaded_image(
             413,
         )
 
-    # First try ordinary raster images using their actual file content.
+    # First inspect the actual content as a PNG or JPEG.
     try:
         with Image.open(BytesIO(content)) as image:
             detected_format = image.format
@@ -63,15 +85,9 @@ def validate_uploaded_image(
                 )
 
             width, height = image.size
+            _validate_dimensions(width, height)
 
-            if width <= 0 or height <= 0:
-                raise UploadValidationError(
-                    "INVALID_IMAGE_DIMENSIONS",
-                    "The image dimensions are invalid.",
-                    400,
-                )
-
-            # Verify the encoded image is structurally valid.
+            # Verify the encoded file without retaining a decoded image.
             image.verify()
 
         return ValidatedImage(
@@ -93,28 +109,35 @@ def validate_uploaded_image(
         raise UploadValidationError(
             "IMAGE_TOO_LARGE_TO_DECODE",
             "The image dimensions exceed the safe decoding limit.",
-            400,
+            413,
+        ) from exc
+
+    except Image.DecompressionBombWarning as exc:
+        # Pillow can warn about very large images before decoding.
+        raise UploadValidationError(
+            "IMAGE_TOO_LARGE_TO_DECODE",
+            "The image dimensions exceed the safe decoding limit.",
+            413,
         ) from exc
 
     except (UnidentifiedImageError, OSError, SyntaxError):
-        # Not a valid PNG/JPEG; try parsing it as DICOM below.
+        # It was not a readable PNG/JPEG; try DICOM parsing.
         pass
 
-    # DICOM is not a Pillow image. Parse it independently.
+    # DICOM is parsed separately from raster images.
     try:
         dataset = pydicom.dcmread(
             BytesIO(content),
             force=False,
-            stop_before_pixels=False,
         )
-    except (InvalidDicomError, OSError, ValueError) as exc:
+    except (InvalidDicomError, OSError, ValueError, EOFError) as exc:
         raise UploadValidationError(
             "INVALID_IMAGE_FILE",
             "The file is not a valid supported PNG, JPEG, or DICOM image.",
             400,
         ) from exc
 
-    # Check that this looks like an image DICOM, not just any DICOM object.
+    # Confirm this is an image DICOM with pixel data.
     if not hasattr(dataset, "Rows") or not hasattr(dataset, "Columns"):
         raise UploadValidationError(
             "INVALID_DICOM_IMAGE",
@@ -129,15 +152,17 @@ def validate_uploaded_image(
             400,
         )
 
-    rows = int(dataset.Rows)
-    columns = int(dataset.Columns)
-
-    if rows <= 0 or columns <= 0:
+    try:
+        rows = int(dataset.Rows)
+        columns = int(dataset.Columns)
+    except (TypeError, ValueError, OverflowError) as exc:
         raise UploadValidationError(
             "INVALID_IMAGE_DIMENSIONS",
             "The DICOM image dimensions are invalid.",
             400,
-        )
+        ) from exc
+
+    _validate_dimensions(columns, rows)
 
     return ValidatedImage(
         filename=filename,

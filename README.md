@@ -5,7 +5,9 @@ AstraMed classifies chest X-rays from the RSNA Pneumonia Detection Challenge (st
 Current verified state (details, evidence and caveats in [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)):
 
 - Held-out test split (4,004 patients) at threshold 0.5: ROC-AUC 0.878, sensitivity 0.56, specificity 0.93. Historical independence of the test split cannot be guaranteed from the repository.
-- The deployed threshold is 0.5; no validation-based threshold has been chosen yet.
+- The deployed threshold is 0.5; no validation-based threshold has been chosen yet. A validation-only comparison of thresholds (e.g. 0.30 and 0.50) is in the status document.
+- Active checkpoint: `outputs/experiments/resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42/checkpoints/best_model.pth` (git-ignored; SHA-256 in the status document). Its exact training provenance cannot be independently established: the original run's log and metadata were not preserved.
+- The image-only ResNet50 pipeline is the completed baseline. Planned next step: multimodal research, subject to a defensible data-source decision (RSNA has no symptoms or clinical history).
 - Sprints 1–7 are implemented; Sprint 8 (multimodal) and Sprint 9 (deployment) have not started.
 - Grad-CAM heatmaps show where the model's score responded; they are not proof of disease location or reasoning. The overlay now blends only where the heatmap is active; the stored Sprint 6 gallery images still use the older whole-image tint. A small (25-image, validation-only, one-seed) weight-randomization check found the maps depend on the learned weights.
 - Not clinically validated; do not use for medical decisions.
@@ -38,7 +40,14 @@ If PowerShell blocks activation, use the activation instructions for your system
 
 ### 3. Install dependencies
 
-Install the dependencies listed in the repository's dependency file. Install the appropriate PyTorch build for your hardware and operating system.
+Install the dependencies listed in the repository's dependency file. Install the appropriate PyTorch build for your hardware and operating system (a plain `pip install -r requirements.txt` gives the CPU build of PyTorch on Windows).
+
+```powershell
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+The editable install (`-e .`) is required: the scripts in `scripts/` import the `src` package and only find it when the project is installed (or when run from the repository root with `python -m`).
 
 ### 4. Configure the API
 

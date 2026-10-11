@@ -7,6 +7,7 @@ Current verified state (details, evidence and caveats in [docs/PROJECT_STATUS.md
 - Held-out test split (4,004 patients) at threshold 0.5: ROC-AUC 0.878, sensitivity 0.56, specificity 0.93. Historical independence of the test split cannot be guaranteed from the repository.
 - The deployed threshold is 0.5; no validation-based threshold has been chosen yet.
 - Sprints 1–7 are implemented; Sprint 8 (multimodal) and Sprint 9 (deployment) have not started.
+- Grad-CAM heatmaps show where the model's score responded; they are not proof of disease location or reasoning. The overlay now blends only where the heatmap is active; the stored Sprint 6 gallery images still use the older whole-image tint. A small (25-image, validation-only, one-seed) weight-randomization check found the maps depend on the learned weights.
 - Not clinically validated; do not use for medical decisions.
 
 ## AstraMed API — Local Setup
@@ -80,6 +81,8 @@ python scripts/test_api_integration.py --image "data\raw\rsna-pneumonia-detectio
 python scripts/test_api_reliability.py --image "data\raw\rsna-pneumonia-detection-challenge\stage_2_train_images\0a0f91dc-6015-4342-b809-d19610854a21.dcm"
 python tests/test_data_integrity.py
 python tests/test_runner_guard.py
+python tests/test_request_id.py
+python tests/test_overlay.py
 ```
 
 The integration test requires the specified DICOM file and a compatible trained checkpoint.

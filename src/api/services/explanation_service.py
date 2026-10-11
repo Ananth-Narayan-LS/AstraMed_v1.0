@@ -254,10 +254,13 @@ def render_explanation(
     overlay = None
 
     if include_overlay:
-        overlay = Image.blend(
-            original_image,
+        # Blend strength follows the heat value (at most 0.6), so regions
+        # with no activation keep the original X-ray pixels unchanged.
+        blend_mask = heatmap_gray.point(lambda value: int(value * 0.6))
+        overlay = Image.composite(
             heatmap_color,
-            alpha=0.4,
+            original_image,
+            blend_mask,
         )
 
     # Package the images and their shared dimensions.

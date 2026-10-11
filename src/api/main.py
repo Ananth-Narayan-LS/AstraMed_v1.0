@@ -44,7 +44,3 @@ def root():
         "docs": "/docs",
         "health": f"{settings.api_prefix}/health",
     }
-
-from src.api.middleware import RequestIDMiddleware
-
-app.add_middleware(RequestIDMiddleware)

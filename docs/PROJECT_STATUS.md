@@ -15,7 +15,7 @@ Detect pneumonia (lung opacity) in chest X-rays with a deep-learning classifier 
 
 ## 3. Split and leakage prevention (Verified)
 - `src/data/split_data.py`: shuffle unique patient IDs with seed 42, cut 70/15/15. Train 18,678 / validation 4,002 / test 4,004 (test: 950 positive, 3,054 negative). Each patient has one image, so a patient-level split is also an image-level split.
-- Disjoint, complete and deterministic: `tests/test_data_integrity.py`. IDs saved in `outputs/evaluation/<experiment>/split_ids.json`.
+- Disjoint, complete and deterministic: `tests/test_data_integrity.py`. `outputs/evaluation/<experiment>/split_ids.json` is a local, regenerable copy of the IDs (the evaluator refuses to continue if the regenerated split differs from it).
 - The split is regenerated from the seed on each run, **and changes if the seed changes**. Not stratified (prevalence: train 22.4%, val 21.9%, test 23.7%).
 - Model selection (best epoch by validation loss) uses validation only (`src/experiments/runner.py`); the runner never touches the test split.
 
@@ -31,7 +31,10 @@ DICOM `pixel_array` (float32) → per-image min-max to [0,1] → resize 512×512
 - The runner now refuses to overwrite an existing checkpoint unless `overwrite=True` (`tests/test_runner_guard.py`).
 
 ## 6. Evaluation results (Verified, `scripts/evaluate_model.py`, 2026-10-11)
-Source: `outputs/evaluation/resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42/evaluation.json` (contains the checkpoint hash and epoch). PR-AUC = scikit-learn average precision.
+Sources (in `outputs/evaluation/resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42/`): `evaluation.json` (test + validation results, checkpoint hash and epoch; created once on 2026-10-11 and not regenerated), `validation_predictions.csv` (4,002 rows: patient_id, target, probability) and `validation_threshold_sweep.json` (a second, independent validation-only run on 2026-10-11 whose sweep matched the saved one exactly). PR-AUC = scikit-learn average precision.
+**No per-patient test predictions are saved**: producing them needs a new test-set inference pass, which was deliberately not done. Test metrics are therefore backed by `evaluation.json` only.
+
+Evaluator design (`scripts/evaluate_model.py`): validation mode (default) writes per-patient predictions and the threshold sweep; test mode (`--split test`) has no threshold option (fixed 0.5), and refuses to run if `evaluation.json` already exists. Existing outputs are never overwritten. Split-overlap checks raise `RuntimeError` (active under `python -O`); patient order and labels are verified against the split.
 
 | Split (patients) | Positives | ROC-AUC | PR-AUC | Threshold |
 |---|---|---|---|---|
@@ -45,16 +48,16 @@ Source: `outputs/evaluation/resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42/e
 
 These match the owner's reported test numbers. Accuracy is not informative here: always predicting "normal" scores ~76%. ROC-AUC rates ranking ability; PR-AUC should be read against a ~0.24 chance level. Single seed, no confidence intervals, no calibration analysis.
 
-**Threshold selection: no threshold has been chosen; the deployed threshold is 0.5.** Validation-only sweep (saved in `evaluation.json`, steps of 0.05): sensitivity/specificity = 0.744/0.813 at 0.35, 0.795/0.758 at 0.30, 0.84/0.72 at 0.25 (0.30 values read from the saved confusion counts: TP 696/875, TN 2369/3127). Choosing among these is a research decision awaiting the owner; the intended method is to choose on validation, then score the test split once at that fixed value. Caveat: validation data also selected the checkpoint, so validation numbers are slightly optimistic. Caveat: test results at validation-chosen thresholds were viewed during an audit session (scratch script, nothing saved or deployed), so a threshold chosen now is not strictly blind to test results.
+**Threshold selection: no threshold has been chosen; the deployed threshold is 0.5.** Validation-only sweep (saved in `evaluation.json`, steps of 0.05): at 0.30 sensitivity = 696/875 ≈ 0.7954 and specificity = 2369/3127 ≈ 0.7576 (re-computed from freshly generated validation predictions, which matched the saved sweep); other points in `validation_threshold_sweep.json`. Note 0.7954 is below 0.80. Choosing among these is a research decision awaiting the owner; the intended method is to choose on validation, then score the test split once at that fixed value. Caveat: validation data also selected the checkpoint, so validation numbers are slightly optimistic. Caveat: test results at validation-chosen thresholds were viewed during an audit session (scratch script, nothing saved or deployed), so a threshold chosen now is not strictly blind to test results.
 
 ### Test-set independence (read this)
 **Historical independence of the test set cannot be proven from the repository and is not guaranteed.** The training runner does not use the test split, and the evaluator only scores it at a fixed threshold. But: no historical test-evaluation script or log exists, the full-data run's log was not preserved, the notebooks were not audited, and `scripts/run_explanation_evaluation.py` uses test-split patients for explanation metrics. The test numbers above were produced by a test-set pass during this stabilization; they confirm the owner's reported values, not that the test split was untouched earlier.
 
 ## 7. Explanation functionality (Verified 2026-10-11 on 25 validation positives; scratch check, not saved as an artifact)
 - Grad-CAM on `model.layer4[-1]` with the positive (pneumonia) logit as score, upsampled to the original image size and drawn with a blue→red colour map. Heatmap, overlay and original share the same size; orientation matches the DICOM (no flip); repeated identical input gave an identical map.
-- Fix applied: the overlay used a flat 0.4 blend that tinted the whole image blue (mean pixel change 45/255). It now blends proportionally to heat (max 0.6; mean change 2.6/255). API fields are unchanged.
+- Fix applied (`src/api/services/explanation_service.py`, covered by `tests/test_overlay.py`): the overlay used a flat 0.4 blend that tinted the whole image blue (mean pixel change 45/255). It now blends proportionally to heat (max 0.6; mean change 2.6/255). API fields are unchanged. Edge cases checked: zero or constant heatmap → overlay equals the original exactly; non-square image → all three images keep the original size; NaN heatmap → controlled `INVALID_HEATMAP` error. The randomization check below is a small, one-seed sanity test, not a faithfulness proof.
 - Weight-randomization check: trained-model maps put 0.39 of their heat inside annotated boxes (box area 0.17 of the image; peak inside a box in 56% of cases); randomized-weights copies gave 0.10–0.20 (peak in box 0–20%), and rank correlation with the trained map was near zero. So the maps depend on learned weights. 25 images, one seed.
-- Limits: Grad-CAM shows where the model's score responded, not clinical reasoning, causality or disease boundaries; the map is coarse (7×7 stretched), min-max scaled per image (a "normal" image still shows a hot spot), and was observed to fire on non-lung structures in the example checked. The saved Sprint 6 gallery and `outputs/explainability/quantitative_evaluation/` (ResNet Grad-CAM pointing-game 0.50, IoU ≈ 0.16–0.20; ViT attention pointing-game 0.03) were generated earlier with older checkpoints and the old overlay; they were not regenerated.
+- Limits: Grad-CAM shows where the model's score responded, not clinical reasoning, causality or disease boundaries; the map is coarse (7×7 stretched), min-max scaled per image (a "normal" image still shows a hot spot), and was observed to fire on non-lung structures in the example checked. The saved Sprint 6 gallery and `outputs/explainability/quantitative_evaluation/` (ResNet Grad-CAM pointing-game 0.50, IoU ≈ 0.16–0.20; ViT attention pointing-game 0.03) were generated earlier with older checkpoints and still contain the **old whole-image blue overlay**; they were not regenerated.
 
 ## 8. How to run
 ```
@@ -65,7 +68,10 @@ python scripts/test_api_integration.py --image <dcm>
 python scripts/test_api_reliability.py --image <dcm>
 python tests/test_data_integrity.py              # 7 checks
 python tests/test_runner_guard.py                # 1 check
-python scripts/evaluate_model.py --experiment <experiment_name>
+python tests/test_request_id.py                  # 4 checks
+python tests/test_overlay.py                     # 3 checks
+python scripts/evaluate_model.py --experiment <experiment_name>              # validation only
+# python scripts/evaluate_model.py --experiment <name> --split test           # one-shot, refuses if evaluation.json exists
 ```
 `pytest` is not installed; every test file runs as a plain script. Results on 2026-10-11 with the project `.venv`: all passed; reliability test GPU memory growth 0.00 MiB. Passing API tests show the service behaves consistently; they do not show model quality, clinical validity or heatmap faithfulness. Not run: notebooks, the Streamlit dashboard, a clean-environment install, concurrent requests.
 
@@ -85,10 +91,12 @@ python scripts/evaluate_model.py --experiment <experiment_name>
 ## 10. Known bugs, limitations, unverified assumptions
 - Active model: single seed, 1 effective epoch, sensitivity 0.56 at the default threshold.
 - `predict` is `async def` but runs blocking GPU work; one request blocks others (including `/health`). Do not add threads without making Grad-CAM hook use thread-safe.
-- `RequestIDMiddleware` is registered twice in `src/api/main.py` (harmless; left in place pending approval). `scripts/run_benchmark.py` now reports FAILED for models whose smoke-run checkpoint exists (intended overwrite guard).
+- Fixed 2026-10-11: `RequestIDMiddleware` was registered twice in `src/api/main.py`; with no `X-Request-ID` header the response header and body `request_id` differed (reproduced, then fixed; `tests/test_request_id.py`). `scripts/run_benchmark.py` now reports FAILED for models whose smoke-run checkpoint exists (intended overwrite guard).
 - Unused/duplicate code: `src/api/services/explanation_services.py`; empty `src/explainability/input_pipeline.py` and `model_loader.py`. Several docs are empty placeholders (`ROADMAP.md`, `experiment_log.md`, `change_log.md`, ...).
 - ViT-B/16 is selectable in the API, but its only checkpoint is a collapsed smoke-test run.
-- `requirements.txt` is unpinned and was not tested in a clean environment.
+- `requirements.txt`: static scan of imports in `src/`, `app/`, `scripts/`, `tests/` found no unlisted third-party package (VERIFIED). It is unpinned, and a clean-environment install was NOT performed (UNKNOWN).
+- Checkpoint integrity (VERIFIED 2026-10-11): active file and the owner's backup in `%USERPROFILE%\AstraMed-backupest_model.pth` both hash to the SHA-256 above.
+- Artifact tracking: `evaluation.json` and `validation_predictions.csv` are small text and support documented claims (suitable to commit); `validation_threshold_sweep.json` likewise; `split_ids.json` (1 MB) is regenerable from code + seed 42 and is kept local.
 - Tested environment: Windows, Python 3.14, torch 2.13 (CUDA 12.6). Other environments are untested.
 
 ## 11. Obtaining / regenerating checkpoints

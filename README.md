@@ -1,3 +1,14 @@
+## AstraMed — Explainable Pneumonia Detection (research prototype)
+
+AstraMed classifies chest X-rays from the RSNA Pneumonia Detection Challenge (stage 2; 26,684 patients, label = lung opacity yes/no) with an ImageNet-pretrained ResNet50 and returns a Grad-CAM heatmap through a FastAPI service. Patients are split 70/15/15 (seed 42) into train / validation / test with no patient overlap.
+
+Current verified state (details, evidence and caveats in [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)):
+
+- Held-out test split (4,004 patients) at threshold 0.5: ROC-AUC 0.878, sensitivity 0.56, specificity 0.93. Historical independence of the test split cannot be guaranteed from the repository.
+- The deployed threshold is 0.5; no validation-based threshold has been chosen yet.
+- Sprints 1–7 are implemented; Sprint 8 (multimodal) and Sprint 9 (deployment) have not started.
+- Not clinically validated; do not use for medical decisions.
+
 ## AstraMed API — Local Setup
 
 ### Requirements
@@ -67,7 +78,6 @@ python scripts/test_api_foundation.py
 python scripts/test_api_explanations.py
 python scripts/test_api_integration.py --image "data\raw\rsna-pneumonia-detection-challenge\stage_2_train_images\0a0f91dc-6015-4342-b809-d19610854a21.dcm"
 python scripts/test_api_reliability.py --image "data\raw\rsna-pneumonia-detection-challenge\stage_2_train_images\0a0f91dc-6015-4342-b809-d19610854a21.dcm"
-python scripts/test_api_explanations.py
 python tests/test_data_integrity.py
 python tests/test_runner_guard.py
 ```

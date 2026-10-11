@@ -1,9 +1,16 @@
-fastapi
+# Versions below are the minimums known to work (tested environment: Python 3.14, Windows, CUDA 12.6).
+# Install the torch/torchvision build matching your hardware from https://pytorch.org first.
+fastapi>=0.110
 uvicorn[standard]
-httpx
+python-multipart   # required by FastAPI for file uploads and form fields
+httpx              # required by FastAPI TestClient
 python-dotenv
 numpy
+pandas
+scikit-learn
 Pillow
 pydicom
+matplotlib
+streamlit          # only for the EDA/explainability dashboard in app/
 torch
 torchvision

@@ -66,10 +66,17 @@ http://127.0.0.1:8000/docs
 python scripts/test_api_foundation.py
 python scripts/test_api_explanations.py
 python scripts/test_api_integration.py --image "data\raw\rsna-pneumonia-detection-challenge\stage_2_train_images\0a0f91dc-6015-4342-b809-d19610854a21.dcm"
-python scripts/test_api_reliability.py
+python scripts/test_api_reliability.py --image "data\raw\rsna-pneumonia-detection-challenge\stage_2_train_images\0a0f91dc-6015-4342-b809-d19610854a21.dcm"
+python scripts/test_api_explanations.py
+python tests/test_data_integrity.py
+python tests/test_runner_guard.py
 ```
 
 The integration test requires the specified DICOM file and a compatible trained checkpoint.
+
+### Model status and provenance
+
+See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for verified sprint status, checkpoint provenance, known limitations, and how to re-evaluate the model (`scripts/evaluate_model.py`).
 
 ### Scope and limitations
 

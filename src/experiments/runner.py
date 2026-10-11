@@ -165,6 +165,7 @@ def run_experiment(
     config: ExperimentConfig,
     max_train_samples: int | None = None,
     max_val_samples: int | None = None,
+    overwrite: bool = False,
 ) -> dict:
     """
     Run one reproducible model experiment.
@@ -189,6 +190,15 @@ def run_experiment(
         print("Advanced model will use random initialization.")
 
     # The experiment configuration is the source of truth for the seed.
+    # Experiment names do not encode sample limits, so a smoke test and a
+    # full run share a folder. Never silently replace an existing checkpoint.
+    existing_checkpoint = config.checkpoint_dir / "best_model.pth"
+    if existing_checkpoint.exists() and not overwrite:
+        raise FileExistsError(
+            f"Checkpoint already exists: {existing_checkpoint}. "
+            "Use a different experiment_name or pass overwrite=True."
+        )
+
     set_seed(config.seed)
 
     device = get_device()

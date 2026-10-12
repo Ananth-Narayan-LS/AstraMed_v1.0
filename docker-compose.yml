@@ -1,0 +1,27 @@
+# Local/prototype deployment of the image-only AstraMed API.
+# The checkpoint stays on the host and is mounted read-only; it is never copied into the image.
+services:
+  astramed-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: astramed-api:local
+    ports:
+      - "127.0.0.1:8000:8000"   # localhost only; put a reverse proxy with auth in front for anything else
+    environment:
+      ASTRAMED_API_ENV: production
+      ASTRAMED_LOG_LEVEL: INFO
+      ASTRAMED_DEFAULT_MODEL: resnet50
+      ASTRAMED_PREDICTION_THRESHOLD: "0.5"
+      ASTRAMED_MAX_UPLOAD_MB: "20"
+      ASTRAMED_PRELOAD_MODEL: "true"   # fail fast at startup if the checkpoint is missing or invalid
+    volumes:
+      - ./outputs/experiments/resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42/checkpoints:/app/outputs/experiments/resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42/checkpoints:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

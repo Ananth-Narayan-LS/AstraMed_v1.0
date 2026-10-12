@@ -1,0 +1,17 @@
+# Minimal runtime dependencies for the AstraMed image-only API (used by the Docker image).
+# Versions verified on 2026-10-11/12: installed in fresh Python 3.14.6 virtual environments
+# (Windows, CPU build of PyTorch), where the API test suites passed, and installed in the Docker
+# image (Python 3.14.8, Linux, CPU torch), where every package reports exactly these versions.
+# The API imports none of pandas / scikit-learn / matplotlib / streamlit.
+# The Dockerfile installs torch and torchvision from the PyTorch CPU index first.
+fastapi==0.143.0
+starlette==1.7.0
+pydantic==2.14.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+python-dotenv==1.2.4
+numpy==2.5.4
+Pillow==12.3.0
+pydicom==3.0.2
+torch==2.14.1
+torchvision==0.29.1

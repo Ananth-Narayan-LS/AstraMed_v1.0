@@ -86,6 +86,7 @@ class APISettings:
     prediction_threshold: float = 0.5
 
     environment: str = "development"
+    preload_model: bool = False
 
     @classmethod
     def from_environment(cls) -> "APISettings":
@@ -140,6 +141,10 @@ class APISettings:
             "development",
         ).strip().lower()
 
+        preload_raw = os.getenv("ASTRAMED_PRELOAD_MODEL", "false").strip().lower()
+        if preload_raw not in {"true", "false"}:
+            raise ValueError("ASTRAMED_PRELOAD_MODEL must be true or false.")
+
         if not app_name:
             raise ValueError("ASTRAMED_APP_NAME cannot be empty.")
 
@@ -170,6 +175,7 @@ class APISettings:
             default_model=default_model,
             prediction_threshold=prediction_threshold,
             environment=environment,
+            preload_model=preload_raw == "true",
         )
 
 

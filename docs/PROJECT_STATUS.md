@@ -4,7 +4,7 @@ Research prototype. **Not clinically validated and not for clinical use.** Last 
 Statements below are marked **Verified** (checked by running code or reading a saved artifact), **Reported** (owner's statement, not provable from the repo) or **Unknown**.
 
 ## 1. Objective and scope
-Detect pneumonia (lung opacity) in chest X-rays with a deep-learning classifier and show a visual explanation. Current scope: a FastAPI backend (`/api/v1/predict`, `/api/v1/health`) serving a ResNet50 binary classifier with Grad-CAM heatmaps. This image-only ResNet50 pipeline (data → model → evaluation → API → explanation) is the **completed baseline** that any later multimodal work must be compared against. Out of scope so far: multimodal inputs (Sprint 8), Docker/deployment (Sprint 9), any clinical validation. Planned next step: multimodal research, subject to a defensible data-source decision (RSNA has no symptoms or clinical history).
+Detect pneumonia (lung opacity) in chest X-rays with a deep-learning classifier and show a visual explanation. Current scope: a FastAPI backend (`/api/v1/predict`, `/api/v1/health`) serving a ResNet50 binary classifier with Grad-CAM heatmaps. This image-only ResNet50 pipeline (data → model → evaluation → API → explanation) is the **completed baseline** that any later multimodal work must be compared against. Out of scope so far: multimodal inputs (Sprint 8), Docker/deployment (Sprint 9), any clinical validation. Sprint 8 (multimodal research) is partially complete (section 12); further multimodal work is subject to a defensible data-source decision (RSNA has no symptoms or clinical history).
 
 ## 2. Dataset and labels (Verified by script)
 - Source: RSNA Pneumonia Detection Challenge, stage-2 train files in `data/raw/rsna-pneumonia-detection-challenge/` (git-ignored). The repo does not record the download URL or licence.
@@ -102,8 +102,8 @@ python scripts/evaluate_model.py --experiment <experiment_name>              # v
 | 6 Explainability | Implemented; overlay fixed; randomization check passed on a small sample; saved outputs stale | section 7 |
 | 7 API | Verified | section 8 |
 | Pending before Sprint 8/9 | Owner's threshold decision (deployed value stays 0.5 until then); optional re-run of explainability evaluation on the active checkpoint; dependency pinning. Done: owner backup of the checkpoint (hash verified 2026-10-11); a clean install on one machine (CPU, Python 3.14). The checkpoint's exact training provenance cannot be independently established and is documented as such. | — |
-| 8 Multimodal | Not started; RSNA offers only age/sex/view position (view position may correlate with label — check for shortcut) | — |
-| 9 Deployment | Not started; no Dockerfile or CI | — |
+| 8 Multimodal | **Partially complete (2026-10-11).** Architecture, leakage-safe pipeline, 21 unit tests and validation experiments done; only image + age + sex trainable; no improvement demonstrated; symptoms/history unavailable; no test inference. See section 12. | `src/multimodal/`, `tests/test_multimodal.py`, `outputs/multimodal/validation_comparison.json` |
+| 9 Deployment | **Verified for CPU Docker deployment on one machine (2026-10-12).** Image builds, container healthy under `docker run` and Docker Compose, smoke test passed, security settings confirmed; GPU-in-Docker, performance, concurrency, long-running stability, other platforms and the runner-guard test in the owner's environment not verified; no CI. See section 13. | `Dockerfile`, `docker-compose.yml`, `docs/DEPLOYMENT.md`, `tests/test_deployment.py` |
 
 ## 10. Known bugs, limitations, unverified assumptions
 - Active model: single seed, 1 effective epoch, sensitivity 0.56 at the default threshold.
@@ -118,3 +118,73 @@ python scripts/evaluate_model.py --experiment <experiment_name>              # v
 
 ## 11. Obtaining / regenerating checkpoints
 Checkpoints are git-ignored (`*.pth`, `outputs/experiments/**/checkpoints/`). The active file exists only on the original machine; back it up (GitHub Release, Git LFS or cloud storage) and verify with the SHA-256 above. To regenerate, run `run_experiment(ExperimentConfig(model_name="resnet50", pretrained=True, batch_size=4, learning_rate=1e-4, epochs=2, seed=42))` with no sample limits and a **new** `experiment_name`; results will be similar but not bit-identical (cuDNN determinism is only partly enforced).
+
+## 12. Sprint 8 — multimodal research model (implemented 2026-10-11; research only)
+
+**Verdict: partial multimodal implementation. The reusable architecture, data pipeline and tests are done; only image + age + sex could be trained because RSNA has no symptom or clinical-history data, and that added nothing measurable.**
+
+### Feature availability (Verified: all 26,684 DICOM headers read with `src/multimodal/clinical_data.py`)
+| Feature | Source | Coverage | Missing | Usable now? |
+|---|---|---|---|---|
+| Age | DICOM `PatientAge` | 26,679 / 26,684 | 5 (0.02%) | Yes (range 1-92, mean 47) |
+| Sex | DICOM `PatientSex` (M 15,166 / F 11,518) | 26,684 | 0 | Yes |
+| View position | DICOM `ViewPosition` (PA 14,511 / AP 12,173) | 26,684 | 0 | Available, **excluded from the primary model** (shortcut risk) |
+| Symptoms | none in RSNA files or repo | 0 | 100% | **No** |
+| Clinical history | none in RSNA files or repo | 0 | 100% | **No** |
+
+- The join of header fields to labels is one-to-one (26,684 unique IDs; DICOM `PatientID` equals the filename). Duplicates, orphans and malformed tables are rejected (`validate_join`, tested).
+- View position is a shortcut: pneumonia prevalence is 0.383 for AP vs 0.093 for PA (the label is tied to how the X-ray was taken, and the view is also visible in the image). A metadata-only logistic regression (scratch check: fitted on training patients, scored on validation) gives ROC-AUC 0.53 for age + sex but 0.71 with view position. Age and sex alone are almost uninformative. View position was therefore run only as a labelled ablation.
+- No symptom or history text was fabricated. The text encoder (`src/multimodal/text.py`) is implemented, masked, and unit-tested with clearly labelled synthetic strings only. It is inactive in every trained model (its modality masks are always 0). Genuine text would need a different dataset with patient-level linkage and licence checks; none was downloaded.
+
+### Architecture (`src/multimodal/`)
+ResNet50 image encoder (same layer names as the baseline; baseline weights loaded read-only, everything except the old 1-logit head; the new projection and fusion head are untrained) + structured encoder (age z-score, age-missing flag, sex one-hot with an unknown slot; small MLP) + optional text encoder, concatenated with modality-mask bits, then an MLP giving one logit. A masked modality contributes exactly zero, so absence is explicit (tested: masked features have no effect on the output). Plain `BCEWithLogitsLoss` with no class weighting (as in the baseline, to keep arms comparable). The age mean/std are fitted on the training patients only. The existing API is **unchanged**; no multimodal endpoint was added (see below).
+
+### Experiment protocol (fixed before any result was seen)
+Existing 70/15/15 patient-level split; train on the training patients only; select the epoch by validation PR-AUC (patience 2, at most 4 epochs). The test split is never loaded (`forbidden_ids` guard) and **no test inference was run in Sprint 8**. Epoch 1 trains the new layers with the image encoder frozen; epochs 2+ unfreeze it (encoder lr 2e-5, new layers 3e-4, Adam, batch 32). Seed 42 plus seeds 1 and 2 give a sense of run-to-run noise. To save compute, train and validation images are cached locally as preprocessed 224x224 float16 (`scripts/build_image_cache.py`; test images are not cached). Parity check: the frozen baseline on cached inputs differs from its saved DICOM-pipeline validation probabilities by at most 0.0031 (mean 0.0003) on 500 patients.
+
+An **image-only control** with the identical fusion head and recipe is included, because the multimodal models also receive extra image fine-tuning that the frozen baseline did not. Without the control, any gain could be wrongly credited to the clinical data.
+
+### Validation results (4,002 validation patients, 875 positive; threshold 0.5 for point metrics; `outputs/multimodal/validation_comparison.json`)
+| Model (seeds 42 / 1 / 2) | ROC-AUC | PR-AUC | Sensitivity | Specificity |
+|---|---|---|---|---|
+| Frozen image-only baseline (deployed) | 0.8621 | 0.6806 | 0.526 | 0.931 |
+| Image-only control | 0.8776 / 0.8765 / 0.8769 | 0.7046 / 0.7047 / 0.7020 | 0.477 / 0.565 / 0.566 | 0.946 / 0.924 / 0.922 |
+| Image + age + sex | 0.8768 / 0.8769 / 0.8769 | 0.7027 / 0.7040 / 0.7022 | 0.465 / 0.579 / 0.558 | 0.948 / 0.918 / 0.923 |
+| Image + age + sex + view position (ablation, seed 42) | 0.8762 | 0.7013 | 0.469 | 0.948 |
+
+- Image-only control vs the frozen baseline: ROC-AUC about +0.015 in all three seeds (paired-bootstrap 95% intervals roughly +0.007 to +0.023). Extra image training helps on validation (the baseline was effectively one epoch).
+- Image + age + sex vs the same-seed image-only control: change in ROC-AUC -0.0008, +0.0004, +0.0000 and in PR-AUC -0.0018, -0.0007, +0.0002; every interval includes 0. **No multimodal improvement was demonstrated.** View position was slightly worse than the control (seed 42: change in ROC-AUC -0.0014, interval excludes 0; PR-AUC -0.0033).
+- Point metrics at 0.5 vary by seed (sensitivity 0.47-0.58) because where the probabilities sit moves even when ranking quality (AUC) is stable. Do not read sensitivity differences between arms as effects. All arms overfit after epoch 2 (validation loss rises); epoch 2 was selected every time.
+- Cost: about 570 s per 4-epoch run, peak GPU memory about 3.0 GB (RTX 4050 Laptop 6 GB; torch 2.13.0+cu126; Windows, Python 3.14.6).
+- Validation data selected the epoch for every arm (same rule), so absolute validation numbers are slightly optimistic. Differences between arms are paired on the same patients; intervals reflect sampling of validation patients only, and three seeds are shown.
+- The Sprint 8 models are research artifacts: **not deployed, and the deployed threshold remains 0.5**. They have no held-out result, and the caveats about historical test-set independence still apply.
+
+### Reproduce
+```
+python scripts/build_image_cache.py                       # local cache, train+val only (~2.3 GB, git-ignored)
+python scripts/train_multimodal.py --arm image_only --seed 42
+python scripts/train_multimodal.py --arm structured --seed 42
+python scripts/train_multimodal.py --arm structured_view --seed 42   # shortcut ablation
+python scripts/compare_multimodal.py --parity-check 500 --arms image_only_resnet50_seed42 structured_resnet50_seed42
+python tests/test_multimodal.py                           # 21 unit tests
+```
+Outputs go to `outputs/multimodal/<arm>_resnet50_seed<N>/` (checkpoint, `metadata.json` with config, feature schema, missingness, baseline hash and provenance, `history.json`, and a local `val_predictions.csv`). Training refuses to reuse an existing run folder or overwrite any checkpoint. Local-only (git-ignored): the cache, `clinical_metadata.csv`, checkpoints and per-patient prediction CSVs.
+
+### API integration: deliberately not done
+The image-only `/api/v1/predict` is untouched. A multimodal endpoint would need a versioned route (for example `/api/v2/predict`) with optional `age` (0-120) and `sex` (M/F/unknown) and a response listing `modalities_used`. The evidence gives no reason to ship it: age and sex added no measurable value, and symptom/history inputs have no training data.
+
+### Remaining blockers and next actions
+- Full fusion (symptoms + history) is blocked by data: it needs a dataset with genuine, patient-linked text and compatible licensing; none is in the repository.
+- If multimodal research continues, the data-source decision comes first. The model already accepts text inputs without architecture changes.
+- The +0.015 ROC-AUC from further image fine-tuning (early-stopped on validation) is a legitimate follow-up for the image model, but it needs a held-out evaluation decision from the owner and does not change the deployed model.
+
+## 13. Sprint 9 — Docker deployment (2026-10-12)
+
+**Verdict: the image-only API runs correctly in Docker, started both with `docker run` and with Docker Compose. A few items remain unverified (listed below), so Sprint 9 is verified for CPU deployment on this machine only.** Commands and the full status table: [docs/DEPLOYMENT.md](DEPLOYMENT.md).
+
+- **Added:** `Dockerfile` (python:3.14-slim, CPU-only PyTorch, non-root user, health check), `.dockerignore`, `docker-compose.yml` (checkpoint mounted read-only, localhost-only port, read-only filesystem), `requirements-api.txt` (pinned, minimal) and `requirements-dev.txt`, `scripts/smoke_test_deployment.py`, `tests/test_deployment.py` (12 checks).
+- **API changes (additive only):** `GET /api/v1/ready` (checkpoint file present → 200, else 503, no paths); optional `ASTRAMED_PRELOAD_MODEL` (default false = previous lazy behaviour). Existing routes, response schemas, preprocessing, threshold 0.5, checkpoint selection and middleware are unchanged. The multimodal code is neither imported by the API nor in the image.
+- **Verified (run here):** image `astramed-api:local` builds (1.58 GB); container reaches `healthy`; `/health` and `/ready` return 200; prediction smoke test 12/12 against the Compose container (also reported 12/12 by the project owner against the `docker run` container); checkpoint bind mount is read-only and its hash inside the container equals the host original and the backup (`77A82AAC...53ED26`); non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges` and localhost-only port binding confirmed by `docker inspect`; `docker compose config`/`up`/`ps`/`logs`/`stop`/`start` work; in the project `.venv`: `test_deployment.py` 12/12, API foundation 10/10, explanations, integration, reliability (GPU memory growth 0.00 MiB) and runner-guard all passed.
+- **Not verified:** the runner-guard test in the project owner's own environment (reported blocked by Windows Application Control for a scikit-learn DLL; not reproduced here); automatic restart after a host reboot; GPU inside Docker; throughput, latency, memory use; concurrent requests; long-running stability; arm64 and other operating systems; behaviour of the missing-checkpoint failure inside a container was reported by the owner, not re-run by the audit.
+- **Notes:** `ASTRAMED_HOST` and `ASTRAMED_PORT` are validated settings but do not control the server (the port and address are hard-coded in the Dockerfile `CMD`, `HEALTHCHECK`, `EXPOSE` and the Compose mapping). The `docker run` and Compose containers both bind port 8000, so only one can run at a time. The base image tag `python:3.14-slim` floats (the image used Python 3.14.8; earlier host tests used 3.14.6).
+- **Limitations:** no authentication, TLS or rate limiting; `/docs` enabled; synchronous inference (one request blocks others, including `/health`); single worker only; transitive dependencies unlocked; checkpoint provenance as documented above; not clinically validated.

@@ -367,3 +367,26 @@ def predict_image(
         model_name=None,
     )
     return result
+
+
+def check_model_ready(model_name: str, load: bool = False) -> None:
+    """
+    Raise PredictionServiceError if the model cannot be served.
+
+    Default: only check that the configured checkpoint file exists (cheap, used by the
+    readiness endpoint). load=True also builds the model and loads the checkpoint, which
+    is what the optional startup preload uses.
+    """
+    model_name = model_name.lower().strip()
+
+    if model_name not in SUPPORTED_MODELS:
+        raise PredictionServiceError(
+            "UNSUPPORTED_MODEL",
+            f"Model {model_name!r} is not supported.",
+            422,
+        )
+
+    _resolve_checkpoint(model_name)
+
+    if load:
+        _load_model_bundle(model_name)

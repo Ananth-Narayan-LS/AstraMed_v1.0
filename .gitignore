@@ -68,3 +68,13 @@ __pycache__/
 outputs/experiments/**/checkpoints/
 *.pth
 *.pt
+
+# Sprint 8 multimodal: large or patient-level local artifacts
+outputs/multimodal/cache/
+outputs/multimodal/clinical_metadata.csv
+outputs/multimodal/**/*predictions*.csv
+# Local-only evaluation artifacts: individual patient IDs / labels / predictions
+outputs/evaluation/**/split_ids.json
+outputs/evaluation/**/validation_predictions.csv
+# Per-run metadata contains local absolute paths (history.json and validation_comparison.json stay trackable)
+outputs/multimodal/*/metadata.json

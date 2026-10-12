@@ -7,8 +7,8 @@ Current verified state (details, evidence and caveats in [docs/PROJECT_STATUS.md
 - Held-out test split (4,004 patients) at threshold 0.5: ROC-AUC 0.878, sensitivity 0.56, specificity 0.93. Historical independence of the test split cannot be guaranteed from the repository.
 - The deployed threshold is 0.5; no validation-based threshold has been chosen yet. A validation-only comparison of thresholds (e.g. 0.30 and 0.50) is in the status document.
 - Active checkpoint: `outputs/experiments/resnet50_pretrained_img224_bs4_lr0.0001_ep2_seed42/checkpoints/best_model.pth` (git-ignored; SHA-256 in the status document). Its exact training provenance cannot be independently established: the original run's log and metadata were not preserved.
-- The image-only ResNet50 pipeline is the completed baseline. Planned next step: multimodal research, subject to a defensible data-source decision (RSNA has no symptoms or clinical history).
-- Sprints 1–7 are implemented; Sprint 8 (multimodal) and Sprint 9 (deployment) have not started.
+- The image-only ResNet50 pipeline remains the deployed baseline. The Sprint 8 research models (`src/multimodal/`, `outputs/multimodal/`) are not deployed and the API is unchanged.
+- Sprints 1–7 are implemented. Sprint 8 (multimodal research) is partially complete: image + age + sex models were trained and compared on validation data against an image-only control and showed **no measurable gain** (RSNA has no symptoms or clinical history, so full fusion is blocked by data). Sprint 9 (Docker deployment) is verified for the image-only API on CPU on one machine: the image builds and the container runs healthy under `docker run` and Docker Compose, with the baseline checkpoint mounted read-only (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for commands and for what is still unverified: GPU in Docker, performance, concurrency, other platforms). See sections 12-13 of the status document.
 - Grad-CAM heatmaps show where the model's score responded; they are not proof of disease location or reasoning. The overlay now blends only where the heatmap is active; the stored Sprint 6 gallery images still use the older whole-image tint. A small (25-image, validation-only, one-seed) weight-randomization check found the maps depend on the learned weights.
 - Not clinically validated; do not use for medical decisions.
 
@@ -92,6 +92,8 @@ python tests/test_data_integrity.py
 python tests/test_runner_guard.py
 python tests/test_request_id.py
 python tests/test_overlay.py
+python tests/test_multimodal.py
+python tests/test_deployment.py
 ```
 
 The integration test requires the specified DICOM file and a compatible trained checkpoint.

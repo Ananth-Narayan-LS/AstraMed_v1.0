@@ -1,0 +1,52 @@
+# Keep the Docker build context small and free of data, checkpoints and secrets.
+.git
+.github
+.gitignore
+
+# Virtual environments and caches
+.venv
+venv
+env
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+.ipynb_checkpoints
+
+# Secrets / local configuration
+.env
+.env.*
+
+# Datasets, caches, model weights, experiment outputs, prediction files
+data
+outputs
+models
+mlruns
+**/*.pth
+**/*.pt
+**/*.npy
+**/*.dcm
+**/*.csv
+
+# Not part of the API image
+notebooks
+reports
+docs
+tests
+scripts
+app
+assets
+deployment
+src/multimodal
+src/analysis
+m4_current_files.txt
+debug_*.py
+README.md
+LICENSE
+environment.yml
+pyproject.toml
+requirements.txt
+requirements-dev.txt
+docker-compose.yml
+Dockerfile
+.dockerignore
+.claude

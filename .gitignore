@@ -78,3 +78,5 @@ outputs/evaluation/**/split_ids.json
 outputs/evaluation/**/validation_predictions.csv
 # Per-run metadata contains local absolute paths (history.json and validation_comparison.json stay trackable)
 outputs/multimodal/*/metadata.json
+
+outputs/multimodal/*/
